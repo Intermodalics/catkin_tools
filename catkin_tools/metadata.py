@@ -150,7 +150,15 @@ def find_enclosing_workspace(search_start_path):
     workspaces = find_enclosing_workspaces(search_start_path)
     if not workspaces:
         return None
-    return workspaces[0]
+    if len(workspaces) == 1:
+        return workspaces[0]
+
+    print('Multiple nested workspaces have been found for search path `{}`:\n'.format(search_start_path),
+          file=sys.stderr)
+    for workspace in workspaces:
+        print(' - {}'.format(workspace), file=sys.stderr)
+    print('\nPlease select one of them explicitly by adding the --workspace (-w) argument.', file=sys.stderr)
+    sys.exit(1)
 
 def migrate_metadata(workspace_path):
     """Migrate metadata if it's out of date."""
