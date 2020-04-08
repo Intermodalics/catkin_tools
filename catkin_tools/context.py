@@ -174,20 +174,14 @@ class Context(object):
         # Initialize dictionary version of opts namespace
         opts_vars = vars(opts) if opts else {}
 
-        # Get the workspace (either the given directory or the enclosing ws)
-        workspace_hint = workspace_hint or opts_vars.get('workspace', None) or getcwd()
-        workspaces = find_enclosing_workspaces(workspace_hint)
-        if not workspaces:
-            workspace = None
-        elif len(workspaces) == 1:
-            workspace = workspaces[0]
+        # Get the workspace (either the given directory or the ws enclosing cwd)
+        workspace_hint = workspace_hint or opts_vars.get('workspace', None)
+        if workspace_hint:
+            workspace = workspace_hint
         else:
-            print('Multiple nested workspaces have been found for search path `{}`:\n'.format(workspace_hint),
-                file=sys.stderr)
-            for workspace in workspaces:
-                print(' - {}'.format(workspace), file=sys.stderr)
-            print('\nPlease select one of them explicitly by adding the --workspace (-w) argument.', file=sys.stderr)
-            sys.exit(1)
+            workspaces = find_enclosing_workspaces(getcwd())
+            if workspaces:
+                workspace = workspaces[-1]
 
         if not workspace:
             if strict or not workspace_hint:

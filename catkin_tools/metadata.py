@@ -134,23 +134,18 @@ def find_enclosing_workspace(search_start_path):
     each parent directory until either finding such a directory or getting to
     the root of the filesystem.
 
-    If more than one candidate exists, print a detailed error message that
-    explains the situation and exit.
+    If more than one candidate exists, returns the topmost workspace (closest
+    to the root of the filesystem.
 
     :search_start_path: Directory which either is a catkin workspace or is
     contained in a catkin workspace
 
     :returns: Path to the workspace if found, `None` if not found.
     """
-    # Check if marker file exists in search_start_path
-    candidate_path = os.path.join(search_start_path, METADATA_DIR_NAME)
-    if os.path.exists(candidate_path) and os.path.isdir(candidate_path):
-        return search_start_path
-
     workspaces = find_enclosing_workspaces(search_start_path)
     if not workspaces:
         return None
-    return workspaces[0]
+    return workspaces[-1]
 
 def migrate_metadata(workspace_path):
     """Migrate metadata if it's out of date."""
@@ -238,7 +233,8 @@ def init_metadata_root(workspace_path, reset=False):
             "not exist." % (workspace_path))
 
     # Check if the desired workspace is enclosed in another workspace
-    marked_workspace = find_enclosing_workspace(workspace_path)
+    marked_workspace = find_enclosing_workspaces(workspace_path)
+    if marked_workspace: marked_workspace = marked_workspace[0]
 
     if marked_workspace and marked_workspace != workspace_path:
         raise IOError(
