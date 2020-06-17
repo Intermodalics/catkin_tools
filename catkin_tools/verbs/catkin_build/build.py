@@ -186,6 +186,7 @@ def build_isolated_workspace(
     interleave_output=False,
     no_status=False,
     limit_status_rate=10.0,
+    skip_install=False,
     lock_install=False,
     no_notify=False,
     continue_on_failure=False,
@@ -221,6 +222,8 @@ def build_isolated_workspace(
     :type no_status: bool
     :param limit_status_rate: rate to which status updates are limited; the default 0, places no limit.
     :type limit_status_rate: float
+    :param install: install each package after the build if enabled in context
+    :type install: bool
     :param lock_install: causes executors to synchronize on access of install commands
     :type lock_install: bool
     :param no_notify: suppresses system notifications
@@ -273,6 +276,8 @@ def build_isolated_workspace(
     summary_notes = []
     if force_cmake:
         summary_notes += [clr("@!@{cf}NOTE:@| Forcing CMake to run for each package.")]
+    if skip_install:
+        summary_notes += [clr("@!@{cf}NOTE:@| Temporarily skipping the installation stage.")]
     log(context.summary(summary_notes))
 
     # Make sure there is a build folder and it is not a file
@@ -451,6 +456,7 @@ def build_isolated_workspace(
                 dependencies=prebuild_pkg_deps,
                 force_cmake=force_cmake,
                 pre_clean=pre_clean,
+                skip_install=skip_install,
                 prebuild=True)
 
             # Add the prebuld job
@@ -497,7 +503,8 @@ def build_isolated_workspace(
             package_path=pkg_path,
             dependencies=deps,
             force_cmake=force_cmake,
-            pre_clean=pre_clean)
+            pre_clean=pre_clean,
+            skip_install=skip_install)
 
         # Create the job based on the build type
         build_type = pkg.get_build_type()

@@ -2,8 +2,8 @@ usage: catkin build [-h] [--workspace WORKSPACE] [--profile PROFILE]
                     [--dry-run] [--get-env PKGNAME] [--this] [--no-deps]
                     [--unbuilt] [--start-with PKGNAME | --start-with-this]
                     [--continue-on-failure] [--force-cmake] [--pre-clean]
-                    [--no-install-lock] [--save-config] [-j JOBS]
-                    [-p PACKAGE_JOBS] [--jobserver | --no-jobserver]
+                    [--skip-install] [--no-install-lock] [--save-config]
+                    [-j JOBS] [-p PACKAGE_JOBS] [--jobserver | --no-jobserver]
                     [--env-cache | --no-env-cache] [--cmake-args ARG [ARG ...]
                     | --no-cmake-args] [--make-args ARG [ARG ...] |
                     --no-make-args] [--catkin-make-args ARG [ARG ...] |
@@ -23,8 +23,8 @@ the `catkin config` command.
 optional arguments:
   -h, --help            show this help message and exit
   --workspace WORKSPACE, -w WORKSPACE
-                        The path to the catkin_tools workspace or a directory
-                        contained within it (default: ".")
+                        The path to the catkin_tools workspace (default:
+                        autodetect)
   --profile PROFILE     The name of a config profile to use (default: active
                         profile)
   --dry-run, -n         List the packages which will be built with the given
@@ -56,6 +56,9 @@ Build:
 
   --force-cmake         Runs cmake explicitly for each catkin package.
   --pre-clean           Runs `make clean` before building each package.
+  --skip-install        Skips the installation step. Useful in combination
+                        with --make-args or for running unit tests in a pre-
+                        installed workspace.
   --no-install-lock     Prevents serialization of the install steps, which is
                         on by default to prevent file install collisions
 

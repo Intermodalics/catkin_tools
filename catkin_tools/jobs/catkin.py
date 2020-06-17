@@ -345,7 +345,15 @@ def link_devel_products(
     return 0
 
 
-def create_catkin_build_job(context, package, package_path, dependencies, force_cmake, pre_clean, prebuild=False):
+def create_catkin_build_job(
+        context,
+        package,
+        package_path,
+        dependencies,
+        force_cmake,
+        pre_clean,
+        skip_install,
+        prebuild=False):
     """Job class for building catkin packages"""
 
     # Package source space path
@@ -470,7 +478,7 @@ def create_catkin_build_job(context, package, package_path, dependencies, force_
         ))
 
     # Make install command, if installing
-    if context.install:
+    if context.install and not skip_install:
         stages.append(CommandStage(
             'install',
             [MAKE_EXEC, 'install'],
