@@ -232,16 +232,6 @@ def init_metadata_root(workspace_path, reset=False):
             "Can't initialize Catkin workspace in path %s because it does "
             "not exist." % (workspace_path))
 
-    # Check if the desired workspace is enclosed in another workspace
-    marked_workspace = find_enclosing_workspaces(workspace_path)
-    if marked_workspace: marked_workspace = marked_workspace[0]
-
-    if marked_workspace and marked_workspace != workspace_path:
-        raise IOError(
-            "Can't initialize Catkin workspace in path %s because it is "
-            "already contained in another workspace: %s." %
-            (workspace_path, marked_workspace))
-
     # Construct the full path to the metadata directory
     metadata_root_path = get_metadata_root_path(workspace_path)
 

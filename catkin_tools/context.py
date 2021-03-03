@@ -175,10 +175,8 @@ class Context(object):
         opts_vars = vars(opts) if opts else {}
 
         # Get the workspace (either the given directory or the ws enclosing cwd)
-        workspace_hint = workspace_hint or opts_vars.get('workspace', None)
-        if workspace_hint:
-            workspace = workspace_hint
-        else:
+        workspace = workspace_hint or opts_vars.get('workspace', None)
+        if not workspace:
             workspaces = find_enclosing_workspaces(getcwd())
             if workspaces:
                 workspace = workspaces[-1]
