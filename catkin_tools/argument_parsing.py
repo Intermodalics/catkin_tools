@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-
 import argparse
 import os
 import re
@@ -254,7 +252,7 @@ def extract_jobs_flags(mflags):
     :rtype: list
     """
     if not mflags:
-        return []
+        return None
 
     # Each line matches a flag type, i.e. -j, -l, --jobs, --load-average
     # (?:^|\s) and (?=$|\s) make sure that the flag is surrounded by whitespace
@@ -324,6 +322,8 @@ def configure_make_args(make_args, jobs_args, use_internal_make_jobserver):
 
     :param make_args: arguments to be passed to GNU Make
     :type make_args: list
+    :param jobs_args: job arguments overriding make flags
+    :type jobs_args: list
     :param use_internal_make_jobserver: if true, use the internal jobserver
     :type make_args: bool
     :rtype: tuple (final make_args, using makeflags, using cliflags, using jobserver)
@@ -331,7 +331,7 @@ def configure_make_args(make_args, jobs_args, use_internal_make_jobserver):
 
     # Configure default jobs options: use all CPUs in each package
     try:
-        # NOTE: this will yeild greater than 100% CPU utilization
+        # NOTE: this will yield greater than 100% CPU utilization
         n_cpus = cpu_count()
         jobs_flags = {
             'jobs': n_cpus,
@@ -378,7 +378,7 @@ def argument_preprocessor(args):
 
     :param args: system arguments from which special arguments need to be extracted
     :type args: list
-    :returns: a tuple contianing a list of the arguments which can be handled
+    :returns: a tuple containing a list of the arguments which can be handled
     by argparse and a dict of the extra arguments which this function has
     extracted
     :rtype: tuple
@@ -394,12 +394,12 @@ def argument_preprocessor(args):
     jobs_args = extract_jobs_flags(' '.join(args))
     if jobs_args:
         # Remove jobs flags from cli args if they're present
-        args = re.sub(' '.join(jobs_args), '', ' '.join(args)).split()
+        args = [arg for arg in args if arg not in jobs_args]
     elif make_args is not None:
         jobs_args = extract_jobs_flags(' '.join(make_args))
         if jobs_args:
             # Remove jobs flags from cli args if they're present
-            make_args = re.sub(' '.join(jobs_args), '', ' '.join(make_args)).split()
+            make_args = [arg for arg in make_args if arg not in jobs_args]
 
     extras = {
         'cmake_args': cmake_args,

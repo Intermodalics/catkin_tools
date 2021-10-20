@@ -12,13 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-
-try:
-    raw_input
-except NameError:
-    raw_input = input
-
 import os
 import shutil
 import sys
@@ -59,7 +52,7 @@ setup_files = ['.catkin', 'env.sh', 'setup.bash', 'setup.sh', 'setup.zsh', '_set
 
 def yes_no_loop(question):
     while True:
-        resp = str(raw_input(question + " [yN]: "))
+        resp = str(input(question + " [yN]: "))
         if resp.lower() in ['n', 'no'] or len(resp) == 0:
             return False
         elif resp.lower() in ['y', 'yes']:
@@ -282,7 +275,7 @@ def clean_profile(opts, profile):
                 safe_rmtree(ctx.log_space_abs, ctx.workspace, opts.force)
 
         # Find orphaned packages
-        if ctx.link_devel and not any([opts.build, opts.devel]):
+        if ctx.link_devel or ctx.isolate_devel and not any([opts.build, opts.devel]):
             if opts.orphans:
                 if os.path.exists(ctx.build_space_abs):
                     log("[clean] Determining orphaned packages...")
@@ -320,8 +313,9 @@ def clean_profile(opts, profile):
                         search_start_path=getcwd(),
                         ws_path=ws_path,
                         warnings=[])
-                except (InvalidPackage, RuntimeError):
-                    this_package = None
+                except InvalidPackage as ex:
+                    sys.exit(clr("@{rf}Error:@| The file %s is an invalid package.xml file."
+                                 " See below for details:\n\n%s" % (ex.package_path, ex.msg)))
 
                 # Handle context-based package cleaning
                 if opts.clean_this:
@@ -344,9 +338,9 @@ def clean_profile(opts, profile):
                     return False
 
         elif opts.orphans or len(opts.packages) > 0 or opts.clean_this:
-            log("[clean] Error: Individual packages can only be cleaned from "
-                "workspaces with symbolically-linked develspaces (`catkin "
-                "config --link-devel`).")
+            log("[clean] Error: Individual packages cannot be cleaned from "
+                "workspaces with merged develspaces, use a symbolically-linked "
+                "or isolated develspace instead.")
 
     except:  # noqa: E722
         # Silencing E722 here since we immediately re-raise the exception.
@@ -385,7 +379,7 @@ def main(opts):
 
     # Check for all profiles option
     if opts.all_profiles:
-        profiles = get_profile_names(opts.workspace or os.getcwd())
+        profiles = get_profile_names(opts.workspace or find_enclosing_workspace(getcwd()))
     else:
         profiles = [opts.profile]
 
