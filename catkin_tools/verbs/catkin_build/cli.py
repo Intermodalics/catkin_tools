@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-
 import argparse
 import logging
 import os
@@ -63,32 +61,6 @@ from .color import clr
 from .build import build_isolated_workspace
 from .build import determine_packages_to_be_built
 from .build import verify_start_with_option
-
-#
-# Begin Hack
-#
-
-# TODO(wjwwood): remove this, once it is no longer needed.
-# argparse may not support mutually exclusive groups inside other groups, see:
-#   http://bugs.python.org/issue10680
-
-# Backup the original constructor
-backup__ArgumentGroup___init__ = argparse._ArgumentGroup.__init__
-
-
-# Make a new constructor with the fix
-def fixed__ArgumentGroup___init__(self, container, title=None, description=None, **kwargs):
-    backup__ArgumentGroup___init__(self, container, title, description, **kwargs)
-    # Make sure this line is run, maybe redundant on versions which already have it
-    self._mutually_exclusive_groups = container._mutually_exclusive_groups
-
-
-# Monkey patch in the fixed constructor
-argparse._ArgumentGroup.__init__ = fixed__ArgumentGroup___init__
-
-#
-# End Hack
-#
 
 
 def prepare_arguments(parser):
@@ -169,7 +141,7 @@ the --save-config argument. To see the current config, use the
     add('--no-summarize', '--no-summary', action='store_false', dest='summarize',
         help='Explicitly disable the end of build summary')
     add('--override-build-tool-check', action='store_true', default=False,
-        help='use to override failure due to using differnt build tools on the same workspace.')
+        help='use to override failure due to using different build tools on the same workspace.')
 
     # Deprecated args now handled by main catkin command
     add('--no-color', action='store_true', help=argparse.SUPPRESS)
@@ -234,7 +206,7 @@ def print_build_env(context, package_name):
         if pkg.name == package_name:
             environ = dict(os.environ)
             loadenv(None, None, environ, pkg, context)
-            print(format_env_dict(environ))
+            print(format_env_dict(environ, human_readable=sys.stdout.isatty()))
             return 0
     print('[build] Error: Package `{}` not in workspace.'.format(package_name),
           file=sys.stderr)
@@ -245,7 +217,7 @@ def main(opts):
 
     # Check for develdebug mode
     if opts.develdebug is not None:
-        os.environ['TROLLIUSDEBUG'] = opts.develdebug.lower()
+        os.environ['PYTHONASYNCIODEBUG'] = opts.develdebug.lower()
         logging.basicConfig(level=opts.develdebug.upper())
 
     # Set color options
@@ -260,15 +232,16 @@ def main(opts):
         # Determine the enclosing package
         try:
             ws_path = find_enclosing_workspace(getcwd())
-            # Suppress warnings since this won't necessaraly find all packages
+            # Suppress warnings since this won't necessarily find all packages
             # in the workspace (it stops when it finds one package), and
             # relying on it for warnings could mislead people.
             this_package = find_enclosing_package(
                 search_start_path=getcwd(),
                 ws_path=ws_path,
                 warnings=[])
-        except (InvalidPackage, RuntimeError):
-            this_package = None
+        except InvalidPackage as ex:
+            sys.exit(clr("@{rf}Error:@| The file %s is an invalid package.xml file."
+                         " See below for details:\n\n%s" % (ex.package_path, ex.msg)))
 
         # Handle context-based package building
         if opts.build_this:
@@ -290,7 +263,14 @@ def main(opts):
         sys.exit(clr("[build] @!@{rf}Error:@| With --no-deps, you must specify packages to build."))
 
     # Load the context
-    ctx = Context.load(opts.workspace, opts.profile, opts, append=True)
+    if opts.build_this or opts.start_with_this:
+        ctx = Context.load(opts.workspace, opts.profile, opts, append=True, strict=True)
+    else:
+        ctx = Context.load(opts.workspace, opts.profile, opts, append=True)
+
+    # Handle no workspace
+    if ctx is None:
+        sys.exit(clr("[build] @!@{rf}Error:@| The current folder is not part of a catkin workspace."))
 
     # Initialize the build configuration
     make_args, makeflags, cli_flags, jobserver = configure_make_args(

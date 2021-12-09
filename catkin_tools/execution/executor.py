@@ -12,17 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-
-import traceback
-
-from itertools import tee
-
 import asyncio
-
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import FIRST_COMPLETED
-
+from itertools import tee
 from osrf_pycommon.process_utils import async_execute_process
 from osrf_pycommon.process_utils import get_loop
 
@@ -46,9 +40,12 @@ def split(values, cond):
 async def async_job(verb, job, threadpool, locks, event_queue, log_path):
     """Run a sequence of Stages from a Job and collect their output.
 
+    :param verb: Current command verb
     :param job: A Job instance
-    :threadpool: A thread pool executor for blocking stages
-    :event_queue: A queue for asynchronous events
+    :param threadpool: A thread pool executor for blocking stages
+    :param locks: Dict containing the locks to acquire
+    :param event_queue: A queue for asynchronous events
+    :param log_path: The path in which logfiles can be written
     """
 
     # Initialize success flag
@@ -101,7 +98,7 @@ async def async_job(verb, job, threadpool, locks, event_queue, log_path):
 
                             # Get the logger
                             protocol_type = stage.logger_factory(verb, job.jid, stage.label, event_queue, log_path)
-                            # Start asynchroonous execution
+                            # Start asynchronous execution
                             transport, logger = await (
                                 async_execute_process(
                                     protocol_type,
@@ -126,7 +123,7 @@ async def async_job(verb, job, threadpool, locks, event_queue, log_path):
                     # Asynchronously yield until this command is completed
                     retcode = await logger.complete
                 except:  # noqa: E722
-                    # Bare except is permissable here because the set of errors which the CommandState might raise
+                    # Bare except is permissible here because the set of errors which the CommandState might raise
                     # is unbounded. We capture the traceback here and save it to the build's log files.
                     logger = IOBufferLogger(verb, job.jid, stage.label, event_queue, log_path)
                     logger.err(str(traceback.format_exc()))
@@ -142,7 +139,7 @@ async def async_job(verb, job, threadpool, locks, event_queue, log_path):
                         logger,
                         event_queue)
                 except:  # noqa: E722
-                    # Bare except is permissable here because the set of errors which the FunctionStage might raise
+                    # Bare except is permissible here because the set of errors which the FunctionStage might raise
                     # is unbounded. We capture the traceback here and save it to the build's log files.
                     logger.err('Stage `{}` failed with arguments:'.format(stage.label))
                     for arg_val in stage.args:
@@ -154,7 +151,7 @@ async def async_job(verb, job, threadpool, locks, event_queue, log_path):
                 raise TypeError("Bad Job Stage: {}".format(stage))
 
             # Set whether this stage succeeded
-            stage_succeeded = (retcode == 0)
+            stage_succeeded = (retcode in stage.success_retcodes)
 
             # Update success tracker from this stage
             all_stages_succeeded = all_stages_succeeded and stage_succeeded
@@ -172,13 +169,17 @@ async def async_job(verb, job, threadpool, locks, event_queue, log_path):
                 repro=stage.get_reproduction_cmd(verb, job.jid),
                 retcode=retcode))
 
+            # Early termination of the whole job
+            if retcode == stage.early_termination_retcode:
+                break
+
             # Close logger
             logger.close()
         finally:
             lock.release()
 
     # Finally, return whether all stages of the job completed
-    return (job.jid, all_stages_succeeded)
+    return job.jid, all_stages_succeeded
 
 
 async def execute_jobs(
@@ -192,7 +193,9 @@ async def execute_jobs(
         continue_without_deps=False):
     """Process a number of jobs asynchronously.
 
+    :param verb: Current command verb
     :param jobs: A list of topologically-sorted Jobs with no circular dependencies.
+    :param locks: Dict containing the locks to acquire
     :param event_queue: A python queue for reporting events.
     :param log_path: The path in which logfiles can be written
     :param max_toplevel_jobs: Max number of top-level jobs

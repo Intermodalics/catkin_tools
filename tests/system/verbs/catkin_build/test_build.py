@@ -1,12 +1,10 @@
-from __future__ import print_function
-
 import os
 import re
 import shutil
 
 from ...workspace_factory import workspace_factory
 
-from ....utils import in_temporary_directory
+from ....utils import in_temporary_directory, temporary_directory
 from ....utils import assert_cmd_success
 from ....utils import assert_cmd_failure
 from ....utils import assert_files_exist
@@ -380,3 +378,56 @@ def test_pkg_with_conditional_build_type():
             # So we have to infer this skipping by checking the build directory.
             msg = "Package with ROS 2 conditional build_type was skipped."
             assert os.path.exists(os.path.join('build', 'build_type_condition')), msg
+
+
+def test_pkg_with_conditional_depend():
+    """Test building a package with a condition attribute in the depend tag"""
+    with redirected_stdio() as (out, err):
+        with workspace_factory() as wf:
+            wf.create_package('ros1_pkg')
+            wf.create_package('ros2_pkg')
+            wf.build()
+            shutil.copytree(
+                os.path.join(RESOURCES_DIR, 'catkin_pkgs', 'depend_condition'),
+                os.path.join('src/depend_condition'))
+            assert catkin_success(BUILD + ['depend_condition'], env={'ROS_VERSION': '1'})
+            assert os.path.exists(os.path.join('build', 'depend_condition'))
+            assert os.path.exists(os.path.join('build', 'ros1_pkg'))
+            assert not os.path.exists(os.path.join('build', 'ros2_pkg'))
+
+
+def test_symlinked_workspace():
+    """Test building from a symlinked workspace"""
+    with redirected_stdio() as (out, err):
+        with workspace_factory() as wf:
+            wf.create_package('pkg')
+            wf.build()
+            assert catkin_success(BUILD)
+            with temporary_directory() as t:
+                os.symlink(wf.workspace, os.path.join(t, 'ws'))
+                assert catkin_success(BUILD + ['-w', os.path.join(t, 'ws')])
+
+
+def test_generate_setup_util():
+    """Test generation of setup utilities in a linked devel space"""
+    with redirected_stdio() as (out, err):
+        with workspace_factory() as wf:
+            wf.create_package('pkg')
+            wf.build()
+            # Test that the files are generated in a clean workspace
+            assert catkin_success(['config', '--install'])
+            assert catkin_success(BUILD)
+            assert os.path.exists(os.path.join(wf.workspace, 'devel', '_setup_util.py'))
+            assert os.path.exists(os.path.join(wf.workspace, 'install', '_setup_util.py'))
+
+            # Test that the files are regenerated after clean
+            assert catkin_success(['clean', '--yes'])
+            assert catkin_success(BUILD)
+            assert os.path.exists(os.path.join(wf.workspace, 'devel', '_setup_util.py'))
+            assert os.path.exists(os.path.join(wf.workspace, 'install', '_setup_util.py'))
+
+            # Test that the files are regenerated after cleaning the install space
+            assert catkin_success(['clean', '--yes', '--install'])
+            assert catkin_success(BUILD)
+            assert os.path.exists(os.path.join(wf.workspace, 'devel', '_setup_util.py'))
+            assert os.path.exists(os.path.join(wf.workspace, 'install', '_setup_util.py'))
