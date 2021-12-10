@@ -14,8 +14,6 @@
 
 """This module implements a class for representing a catkin workspace context"""
 
-from __future__ import print_function
-
 import os
 import re
 import sys
@@ -92,7 +90,7 @@ class Context(object):
             if self.__locked:
                 raise RuntimeError("Setting of context members is not allowed while locked.")
             setattr(self, '__%s_space' % space, value)
-            setattr(self, '__%s_space_abs' % space, os.path.join(self.__workspace, value))
+            setattr(self, '__%s_space_abs' % space, os.path.realpath(os.path.join(self.workspace, value)))
 
         def space_exists(self):
             """
@@ -101,9 +99,20 @@ class Context(object):
             space_abs = getattr(self, '__%s_space_abs' % space)
             return os.path.exists(space_abs) and os.path.isdir(space_abs)
 
+        def package_space(self, package):
+            """
+            Get the package specific path in a space
+            """
+            space_abs = getattr(self, '__%s_space_abs' % space)
+            return os.path.join(space_abs, package.name)
+
         setattr(cls, '%s_space' % space, property(space_getter, space_setter))
         setattr(cls, '%s_space_abs' % space, property(space_abs_getter))
         setattr(cls, '%s_space_exists' % space, space_exists)
+
+        package_space_name = "package_%s_space" % space
+        if not hasattr(cls, package_space_name):
+            setattr(cls, package_space_name, package_space)
 
     @classmethod
     def setup_space_keys(cls):
@@ -244,6 +253,10 @@ class Context(object):
                     if workspace:
                         key_origins[k] = profile
 
+        # When --no-make-args and no other jobs args are given, clean jobs args too
+        if 'make_args' in opts_vars and opts_vars['make_args'] == [] and opts_vars['jobs_args'] is None:
+            context_args['jobs_args'] = []
+
         context_args["key_origins"] = key_origins
 
         # Create the build context
@@ -269,7 +282,7 @@ class Context(object):
                 files[file] = {key: value}
 
         for key, val in data.items():
-            if key in context.key_origins:
+            if context.extends is not None and key in context.key_origins:
                 save_in_file(context.key_origins[key], key, val)
             else:
                 save_in_file(context.profile, key, val)
@@ -321,7 +334,7 @@ class Context(object):
         :type source_space: str
         :param log_space: relative location of log space, defaults to '<workspace>/logs'
         :type log_space: str
-        :param build_space: relativetarget location of build space, defaults to '<workspace>/build'
+        :param build_space: relative target location of build space, defaults to '<workspace>/build'
         :type build_space: str
         :param devel_space: relative target location of devel space, defaults to '<workspace>/devel'
         :type devel_space: str
@@ -339,7 +352,7 @@ class Context(object):
         :type make_args: list
         :param jobs_args: -j and -l jobs args
         :type jobs_args: list
-        :param use_internal_make_jobserver: true if this configuration should use an internal make jobserv
+        :param use_internal_make_jobserver: true if this configuration should use an internal make jobserver
         :type use_internal_make_jobserver: bool
         :param use_env_cache: true if this configuration should cache job environments loaded from resultspaces
         :type use_env_cache: bool
@@ -384,7 +397,7 @@ class Context(object):
         if len(kwargs) > 0:
             print('Warning: Unhandled config context options: {}'.format(kwargs), file=sys.stderr)
 
-        self.destdir = os.environ['DESTDIR'] if 'DESTDIR' in os.environ else None
+        self.destdir = os.environ.get('DESTDIR', None)
 
         # Handle package whitelist/blacklist
         self.whitelist = whitelist or []
@@ -393,7 +406,7 @@ class Context(object):
         # Handle default authors/maintainers
         self.authors = authors or []
         self.maintainers = maintainers or []
-        self.licenses = licenses or 'TODO'
+        self.licenses = licenses or ['TODO']
 
         # Handle build options
         self.devel_layout = devel_layout if devel_layout else 'linked'
@@ -476,7 +489,7 @@ class Context(object):
                 "requires the `catkin` CMake package in your source space "
                 "in order to be built.")]
 
-        # Add warnings based on conflicing CMAKE_PREFIX_PATH
+        # Add warnings based on conflicting CMAKE_PREFIX_PATH
         elif self.cached_cmake_prefix_path and self.extend_path:
             ep_not_in_lcpp = any([self.extend_path in p for p in self.cached_cmake_prefix_path.split(':')])
             if not ep_not_in_lcpp:
@@ -581,8 +594,20 @@ class Context(object):
                 return clr(' @{bf}[unused]@|')
 
         install_layout = 'None'
-        if self.__install:
-            install_layout = 'merged' if not self.__isolate_install else 'isolated'
+        if self.install:
+            install_layout = 'merged' if not self.isolate_install else 'isolated'
+
+        def quote(argument):
+            # Distinguish in the printout if space separates two arguments or if we
+            # print an argument with a space.
+            # e.g. -DCMAKE_C_FLAGS="-g -O3" -DCMAKE_C_COMPILER=clang
+            if ' ' in argument:
+                if "=" in argument:
+                    key, value = argument.split("=", 1)
+                    if ' ' not in key:
+                        return key + '="' + value + '"'
+                return '"' + argument + '"'
+            return argument
 
         subs = {
             'profile': self.profile,
@@ -590,18 +615,21 @@ class Context(object):
             'extend': extend_value,
             'install_layout': install_layout,
             'cmake_prefix_path': (self.cmake_prefix_path or ['Empty']),
-            'cmake_args': ' '.join(self.__cmake_args or ['None']),
-            'make_args': ' '.join(self.__make_args + self.__jobs_args or ['None']),
-            'catkin_make_args': ', '.join(self.__catkin_make_args or ['None']),
-            'source_missing': existence_str(self.source_space_abs),
-            'log_missing': existence_str(self.log_space_abs),
-            'build_missing': existence_str(self.build_space_abs),
-            'devel_missing': existence_str(self.devel_space_abs),
-            'install_missing': existence_str(self.install_space_abs, used=self.__install),
+            'cmake_args': ' '.join([quote(a) for a in self.cmake_args or ['None']]),
+            'make_args': ' '.join(self.make_args + self.jobs_args or ['None']),
+            'catkin_make_args': ', '.join(self.catkin_make_args or ['None']),
             'destdir_missing': existence_str(self.destdir, used=self.destdir),
-            'whitelisted_packages': ' '.join(self.__whitelist or ['None']),
-            'blacklisted_packages': ' '.join(self.__blacklist or ['None']),
+            'whitelisted_packages': ' '.join(self.whitelist or ['None']),
+            'blacklisted_packages': ' '.join(self.blacklist or ['None']),
         }
+        for space, space_dict in sorted(Context.SPACES.items()):
+            key_missing = '{}_missing'.format(space)
+            space_abs = getattr(self, '{}_space_abs'.format(space))
+            if hasattr(self, space):
+                subs[key_missing] = existence_str(space_abs, used=getattr(self, space))
+            else:
+                subs[key_missing] = existence_str(space_abs)
+
         subs.update(**self.__dict__)
         # Get the width of the shell
         width = terminal_width()
@@ -630,7 +658,7 @@ class Context(object):
 
         return (divider + "\n" +
                 ("\n" + divider + "\n").join(groups) + "\n" + divider + "\n" +
-                ((("\n\n").join(notes) + "\n" + divider) if notes else '') +
+                (("\n\n".join(notes) + "\n" + divider) if notes else '') +
                 warnings_joined)
 
     @property
@@ -644,7 +672,7 @@ class Context(object):
         # Validate Workspace
         if not os.path.exists(value):
             raise ValueError("Workspace path '{0}' does not exist.".format(value))
-        self.__workspace = os.path.abspath(value)
+        self.__workspace = os.path.realpath(os.path.abspath(value))
 
     @property
     def extend_path(self):
@@ -842,16 +870,23 @@ class Context(object):
     @property
     def private_devel_path(self):
         """The path to the hidden directory in the develspace that
-        contains the symbollically-linked isolated develspaces."""
+        contains the symbolically-linked isolated develspaces."""
         return os.path.join(self.devel_space_abs, '.private')
 
     def package_private_devel_path(self, package):
         """The path to the linked devel space for a given package."""
         return os.path.join(self.private_devel_path, package.name)
 
-    def package_build_space(self, package):
-        """Get the build directory for a specific package."""
-        return os.path.join(self.build_space_abs, package.name)
+    def package_source_space(self, package):
+        """Get the source directory of a specific package."""
+        for pkg_name, pkg in self.packages:
+            if pkg_name == package.name:
+                pkg_dir = os.path.dirname(pkg.filename)
+                # Need to check if the pkg_dir is the source space as it can also be loaded from the metadata
+                if os.path.commonpath([self.source_space_abs, pkg_dir]) == self.source_space_abs:
+                    return pkg_dir
+
+        return None
 
     def package_devel_space(self, package):
         """Get the devel directory for a specific package.
@@ -864,7 +899,7 @@ class Context(object):
         elif self.link_devel:
             return os.path.join(self.private_devel_path, package.name)
         else:
-            raise ValueError('Unkown devel space layout: {}'.format(self.devel_layout))
+            raise ValueError('Unknown devel space layout: {}'.format(self.devel_layout))
 
     def package_install_space(self, package):
         """Get the install directory for a specific package.
@@ -876,7 +911,7 @@ class Context(object):
         elif self.isolate_install:
             return os.path.join(self.install_space_abs, package.name)
         else:
-            raise ValueError('Unkown install space layout: {}'.format(self.devel_layout))
+            raise ValueError('Unknown install space layout: {}'.format(self.devel_layout))
 
     def package_dest_path(self, package):
         """Get the intermediate destination into which a specific package is built."""

@@ -16,21 +16,16 @@
 
 import os
 import pkg_resources
+from queue import Queue
 import sys
 import time
 import traceback
 import yaml
-
 import asyncio
 
 try:
-    # Python3
-    from queue import Queue
-except ImportError:
-    # Python2
-    from Queue import Queue
-
-try:
+    from catkin_pkg.package import parse_package
+    from catkin_pkg.package import InvalidPackage
     from catkin_pkg.packages import find_packages
     from catkin_pkg.topological_order import topological_order_packages
 except ImportError as e:
@@ -38,8 +33,6 @@ except ImportError as e:
         'Importing "catkin_pkg" failed: %s\nMake sure that you have installed '
         '"catkin_pkg", and that it is up to date and on the PYTHONPATH.' % e
     )
-
-from catkin_pkg.package import parse_package
 
 from catkin_tools.common import FakeLock, expand_glob_package
 from catkin_tools.common import format_time_delta
@@ -58,7 +51,6 @@ from catkin_tools.jobs.catkin import get_prebuild_package
 
 from .color import clr
 
-
 BUILDSPACE_MARKER_FILE = '.catkin_tools.yaml'
 BUILDSPACE_IGNORE_FILE = 'CATKIN_IGNORE'
 DEVELSPACE_MARKER_FILE = '.catkin_tools.yaml'
@@ -71,6 +63,8 @@ def determine_packages_to_be_built(packages, context, workspace_packages):
     :type packages: list
     :param context: Workspace context
     :type context: :py:class:`catkin_tools.verbs.catkin_build.context.Context`
+    :param workspace_packages: list of all packages in the workspace
+    :type workspace_packages: list
     :returns: tuple of packages to be built and those package's deps
     :rtype: tuple
     """
@@ -215,10 +209,14 @@ def build_isolated_workspace(
     :type start_with: str
     :param no_deps: If True, the dependencies of packages will not be built first
     :type no_deps: bool
+    :param unbuilt: Handle unbuilt packages
+    :type unbuilt: bool
     :param n_jobs: number of parallel package build n_jobs
     :type n_jobs: int
     :param force_cmake: forces invocation of CMake if True, default is False
     :type force_cmake: bool
+    :param pre_clean: Clean current build before building
+    :type pre_clean: bool
     :param force_color: forces colored output even if terminal does not support it
     :type force_color: bool
     :param quiet: suppresses the output of commands unless there is an error
@@ -248,7 +246,7 @@ def build_isolated_workspace(
 
     # Assert that the limit_status_rate is valid
     if limit_status_rate < 0:
-        sys.exit("[build] @!@{rf}Error:@| The value of --status-rate must be greater than or equal to zero.")
+        sys.exit("[build] @!@{rf}Error:@| The value of --limit-status-rate must be greater than or equal to zero.")
 
     # Declare a buildspace marker describing the build config for error checking
     buildspace_marker_data = {
@@ -305,7 +303,11 @@ def build_isolated_workspace(
 
     # Get all the packages in the context source space
     # Suppress warnings since this is a utility function
-    workspace_packages = find_packages(context.source_space_abs, exclude_subspaces=True, warnings=[])
+    try:
+        workspace_packages = find_packages(context.source_space_abs, exclude_subspaces=True, warnings=[])
+    except InvalidPackage as ex:
+        sys.exit(clr("@{rf}Error:@| The file %s is an invalid package.xml file."
+                     " See below for details:\n\n%s" % (ex.package_path, ex.msg)))
 
     # Get packages which have not been built yet
     built_packages, unbuilt_pkgs = get_built_unbuilt_packages(context, workspace_packages)
@@ -400,6 +402,8 @@ def build_isolated_workspace(
     # Generate prebuild and prebuild clean jobs, if necessary
     prebuild_jobs = {}
     setup_util_present = os.path.exists(os.path.join(context.devel_space_abs, '_setup_util.py'))
+    if context.install:
+        setup_util_present &= os.path.exists(os.path.join(context.install_space_abs, '_setup_util.py'))
     catkin_present = 'catkin' in (packages_to_be_built_names + packages_to_be_built_deps_names)
     catkin_built = 'catkin' in built_packages
     prebuild_built = 'catkin_tools_prebuild' in built_packages
@@ -680,7 +684,7 @@ SETUP_SH_TEMPLATE = """\
 
 # This file is aggregates the many setup.sh files in the various
 # unmerged devel spaces in this folder.
-# This is occomplished by sourcing each leaf package and all the
+# This is accomplished by sourcing each leaf package and all the
 # recursive run dependencies of those leaf packages
 
 # Source the first package's setup.sh without the --extend option

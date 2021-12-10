@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-
 import os
 
 from catkin_tools.argument_parsing import add_context_args
@@ -35,14 +33,14 @@ def prepare_arguments(parser):
     parser_pkg.description = (
         "Create a new Catkin package. Note that while the "
         "default options used by this command are sufficient for prototyping and "
-        "local usage, it is important that any publically-available packages have "
+        "local usage, it is important that any publicly-available packages have "
         "a valid license and a valid maintainer e-mail address.")
 
     add = parser_pkg.add_argument
 
     add('name', metavar='PKG_NAME', nargs='+',
         help='The name of one or more packages to create. This name should be '
-        'completely lower-case with individual words separated by undercores.')
+        'completely lower-case with individual words separated by underscores.')
 
     add('-p', '--path', action='store', default=os.getcwd(),
         help='The path into which the package should be generated.')
@@ -57,7 +55,7 @@ def prepare_arguments(parser):
     #     default='catkin',
     #     help='The buildtool to use to build the package. (default: catkin)')
 
-    rosdistro_name = os.environ['ROS_DISTRO'] if 'ROS_DISTRO' in os.environ else None
+    rosdistro_name = os.environ.get('ROS_DISTRO', None)
     add('--rosdistro', required=rosdistro_name is None, default=rosdistro_name,
         help='The ROS distro (default: environment variable ROS_DISTRO if defined)')
 

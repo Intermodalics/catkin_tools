@@ -12,18 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-try:
-    # Python3
-    from queue import Empty
-except ImportError:
-    # Python2
-    from Queue import Empty
-
 import math
 import itertools
 import sys
 import threading
 import time
+from queue import Empty
 
 from catkin_tools.common import disable_wide_log
 from catkin_tools.common import format_time_delta
@@ -40,7 +34,7 @@ from catkin_tools.terminal_color import ColorMapper
 
 from catkin_tools.execution import job_server
 
-# This map translates more human reable format strings into colorized versions
+# This map translates more human readable format strings into colorized versions
 _color_translation_map = {
     # 'output': 'colorized_output'
 
@@ -695,7 +689,8 @@ class ConsoleStatusController(threading.Thread):
                 if self.show_buffered_stdout:
                     if len(event.data['interleaved']) > 0:
                         lines = [
-                            line for line in event.data['interleaved'].splitlines(True)
+                            line + '\n'
+                            for line in event.data['interleaved'].splitlines()
                             if (self.show_compact_io is False or len(line.strip()) > 0)
                         ]
                     else:
@@ -705,7 +700,8 @@ class ConsoleStatusController(threading.Thread):
                 elif self.show_buffered_stderr:
                     if len(event.data['stderr']) > 0:
                         lines = [
-                            line for line in event.data['stderr'].splitlines(True)
+                            line + '\n'
+                            for line in event.data['stderr'].splitlines()
                             if (self.show_compact_io is False or len(line.strip()) > 0)
                         ]
                         lines_target = sys.stderr
@@ -725,7 +721,7 @@ class ConsoleStatusController(threading.Thread):
                     if header_title:
                         wide_log(header_title, file=header_title_file)
                     if len(lines) > 0:
-                        wide_log(''.join(lines), end='\r', file=lines_target)
+                        wide_log(''.join(lines), end='\n', file=lines_target)
                     if footer_border:
                         wide_log(footer_border, file=footer_border_file)
                     if footer_title:
@@ -733,11 +729,11 @@ class ConsoleStatusController(threading.Thread):
 
             elif 'STDERR' == eid:
                 if self.show_live_stderr and len(event.data['data']) > 0:
-                    wide_log(self.format_interleaved_lines(event.data), end='\r', file=sys.stderr)
+                    wide_log(self.format_interleaved_lines(event.data), file=sys.stderr)
 
             elif 'STDOUT' == eid:
                 if self.show_live_stdout and len(event.data['data']) > 0:
-                    wide_log(self.format_interleaved_lines(event.data), end='\r')
+                    wide_log(self.format_interleaved_lines(event.data))
 
             elif 'MESSAGE' == eid:
                 wide_log(event.data['msg'])
@@ -763,7 +759,8 @@ class ConsoleStatusController(threading.Thread):
         else:
             prefix = ''
 
-        template = '\r{}\r{}'.format(' ' * terminal_width(), prefix)
+        # This is used to clear the status bar that is printed in the current line
+        clear_line = '\r{}\r'.format(' ' * terminal_width())
         suffix = clr('@|')
-
-        return ''.join(template + line + suffix for line in data['data'].splitlines(True))
+        lines = data['data'].splitlines()
+        return clear_line + '\n'.join(prefix + line + suffix for line in lines)
