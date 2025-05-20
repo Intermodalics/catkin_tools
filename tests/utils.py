@@ -6,10 +6,8 @@ import subprocess
 import sys
 import tempfile
 from io import StringIO
-from subprocess import TimeoutExpired
 
 from catkin_tools.commands.catkin import main as catkin_main
-
 
 TESTS_DIR = os.path.dirname(__file__)
 MOCK_DIR = os.path.join(TESTS_DIR, 'mock_resources')
@@ -90,6 +88,7 @@ class redirected_stdio(object):
         sys.stderr = self.original_stderr
 
         print(self.out.getvalue())
+        print(self.err.getvalue())
 
 
 class temporary_directory(object):
@@ -116,10 +115,11 @@ def in_temporary_directory(f):
     @functools.wraps(f)
     def decorated(*args, **kwds):
         with temporary_directory() as directory:
-            from inspect import getargspec
+            from inspect import getfullargspec
+
             # If it takes directory of kwargs and kwds does already have
             # directory, inject it
-            if 'directory' not in kwds and 'directory' in getargspec(f)[0]:
+            if 'directory' not in kwds and 'directory' in getfullargspec(f)[0]:
                 kwds['directory'] = directory
             return f(*args, **kwds)
     decorated.__name__ = f.__name__
@@ -177,3 +177,14 @@ def assert_files_exist(prefix, files):
         p = os.path.join(prefix, f)
         print("Checking for", p)
         assert os.path.exists(p), "%s doesn't exist" % p
+
+
+def assert_file_contents(path, contents):
+    """Assert that a file has exactly the given contents"""
+    try:
+        contents = contents.encode()
+    except (UnicodeDecodeError, AttributeError):
+        pass
+
+    with open(path, 'rb') as f:
+        assert f.read() == contents

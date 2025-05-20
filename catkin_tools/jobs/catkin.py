@@ -17,21 +17,20 @@ import os
 from hashlib import md5
 
 from catkin_tools.argument_parsing import handle_make_arguments
-
 from catkin_tools.common import mkdir_p
-
+from catkin_tools.execution.io import CatkinTestResultsIOBufferProtocol
 from catkin_tools.execution.jobs import Job
 from catkin_tools.execution.stages import CommandStage
 from catkin_tools.execution.stages import FunctionStage
-from catkin_tools.execution.io import CatkinTestResultsIOBufferProtocol
 
+from .cmake import copy_install_manifest
+from .cmake import get_python_install_dir
 from .commands.cmake import CMAKE_EXEC
 from .commands.cmake import CMakeIOBufferProtocol
 from .commands.cmake import CMakeMakeIOBufferProtocol
 from .commands.cmake import CMakeMakeRunTestsIOBufferProtocol
 from .commands.cmake import get_installed_files
 from .commands.make import MAKE_EXEC
-
 from .utils import copyfiles
 from .utils import loadenv
 from .utils import makedirs
@@ -240,8 +239,18 @@ def link_devel_products(
     # List of files that collide
     files_that_collide = []
 
-    # Select the blacklist
-    blacklist = DEVEL_LINK_PREBUILD_BLACKLIST if prebuild else DEVEL_LINK_BLACKLIST
+    # Select the skiplist
+    skiplist = DEVEL_LINK_PREBUILD_SKIPLIST if prebuild else DEVEL_LINK_SKIPLIST
+
+    def should_skip_file(filename):
+        # Skip files that are in the skiplist...
+        if os.path.relpath(os.path.join(source_path, filename), source_devel_path) in skiplist:
+            return True
+        # ... or somewhere in a directory in the directory skip list
+        for directory in os.path.relpath(os.path.join(source_path, filename), source_devel_path).split(os.path.sep):
+            if directory in DEVEL_LINK_SKIP_DIRECTORIES:
+                return True
+        return False
 
     # Gather all of the files in the devel space
     for source_path, dirs, files in os.walk(source_devel_path):
@@ -250,6 +259,9 @@ def link_devel_products(
 
         # create directories in the destination develspace
         for dirname in dirs:
+            if dirname in DEVEL_LINK_SKIP_DIRECTORIES:
+                continue
+
             source_dir = os.path.join(source_path, dirname)
             dest_dir = os.path.join(dest_path, dirname)
 
@@ -281,8 +293,8 @@ def link_devel_products(
         # create symbolic links from the source to the dest
         for filename in files:
 
-            # Don't link files on the blacklist unless this is a prebuild package
-            if os.path.relpath(os.path.join(source_path, filename), source_devel_path) in blacklist:
+            # Don't link files on the skiplist
+            if should_skip_file(filename):
                 continue
 
             source_file = os.path.join(source_path, filename)
@@ -492,6 +504,13 @@ def create_catkin_build_job(
             logger_factory=CMakeMakeIOBufferProtocol.factory,
             locked_resource=None if context.isolate_install else 'installspace'
         ))
+        # Copy install manifest
+        stages.append(FunctionStage(
+            'register',
+            copy_install_manifest,
+            src_install_manifest_path=build_space,
+            dst_install_manifest_path=context.package_metadata_path(package)
+        ))
 
     return Job(
         jid=package.name,
@@ -523,6 +542,17 @@ def create_catkin_clean_job(
     # Remove installed files
     if clean_install:
         installed_files = get_installed_files(context.package_metadata_path(package))
+        install_dir = context.package_install_space(package)
+        if context.merge_install:
+            # Don't clean shared files in a merged install space layout.
+            installed_files = [
+                path for path in installed_files
+                if os.path.dirname(path) != install_dir
+            ]
+        # If a Python package with the package name is installed, clean it too.
+        python_dir = os.path.join(install_dir, get_python_install_dir(context), package.name)
+        if os.path.exists(python_dir):
+            installed_files.append(python_dir)
         stages.append(FunctionStage(
             'cleaninstall',
             rmfiles,
@@ -652,9 +682,12 @@ def create_catkin_test_job(
     ))
 
     # catkin_test_results
+    result_cmd = ['catkin_test_results']
+    if verbose:
+        result_cmd.append('--verbose')
     stages.append(CommandStage(
         'results',
-        ['catkin_test_results'],
+        result_cmd,
         cwd=build_space,
         logger_factory=CatkinTestResultsIOBufferProtocol.factory,
     ))
@@ -679,27 +712,35 @@ description = dict(
 DEVEL_MANIFEST_FILENAME = 'devel_manifest.txt'
 
 # List of files which shouldn't be copied
-DEVEL_LINK_PREBUILD_BLACKLIST = [
+DEVEL_LINK_PREBUILD_SKIPLIST = [
     '.catkin',
     '.rosinstall',
 ]
-DEVEL_LINK_BLACKLIST = DEVEL_LINK_PREBUILD_BLACKLIST + [
+DEVEL_LINK_SKIPLIST = DEVEL_LINK_PREBUILD_SKIPLIST + [
     os.path.join('etc', 'catkin', 'profile.d', '05.catkin_make.bash'),
     os.path.join('etc', 'catkin', 'profile.d', '05.catkin_make_isolated.bash'),
     os.path.join('etc', 'catkin', 'profile.d', '05.catkin-test-results.sh'),
     'env.sh',
     'setup.bash',
+    'setup.fish',
     'setup.zsh',
     'setup.sh',
     'local_setup.bash',
+    'local_setup.fish',
     'local_setup.zsh',
     'local_setup.sh',
     '_setup_util.py',
 ]
+DEVEL_LINK_SKIP_DIRECTORIES = [
+    '__pycache__',
+]
+# Deprecated names
+DEVEL_LINK_PREBUILD_BLACKLIST = DEVEL_LINK_PREBUILD_SKIPLIST
+DEVEL_LINK_BLACKLIST = DEVEL_LINK_SKIPLIST
 
 # CMakeLists.txt for prebuild package
 SETUP_PREBUILD_CMAKELISTS_TEMPLATE = """\
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.10)
 project(catkin_tools_prebuild)
 
 find_package(catkin QUIET)

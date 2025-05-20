@@ -156,14 +156,14 @@ _catkin_get_packages() {
     zstyle ":completion:${curcontext}:" cache-policy _catkin_packages_caching_policy
   fi
 
-  # If cache is invalid, or if the package list or workspace cache file path are not set yet or this path differ from 
+  # If cache is invalid, or if the package list or workspace cache file path are not set yet or this path differ from
   # its located path (we switched to different workspace) and variables can't be retrieved from cache regenerate cache
   # ( Remember that _retrieve_cache returns 0 if everything's fine, 1 if not. _cache_invalid returns 0 if cache needs rebuilding, 1 otherwise)
   # (see https://unix.stackexchange.com/q/588662 for the use of parentheses)
   if _cache_invalid workspace_packages || \
-    {{ [[ ${+_workspace_packages} -eq 0 ]] || 
-      [[ -z "$_workspace_cache_file_path" ]] ||  
-      [[ "$_workspace_cache_file_path" != "$cache_file_path" ]] } && 
+    {{ [[ ${+_workspace_packages} -eq 0 ]] ||
+      [[ -z "$_workspace_cache_file_path" ]] ||
+      [[ "$_workspace_cache_file_path" != "$cache_file_path" ]] } &&
       ! _retrieve_cache workspace_packages } ; then
 
     _debug_log "Regenerating package cache because retrieval failed ..."
@@ -195,8 +195,9 @@ _catkin_get_profiles() {
 
 _catkin_verbs_complete() {
   local verbs_array;
-  verbs_array=(
-    'build:Build packages'
+  verbs_array=('build:Build packages')
+  [[ -f $(which catkin) ]] || verbs_array+=('cd:Change directory to a package')
+  verbs_array+=(
     'clean:Clean workspace components'
     'config:Configure workspace'
     'create:Create workspace components'
@@ -205,8 +206,9 @@ _catkin_verbs_complete() {
     'list:List workspace components'
     'locate:Locate workspace components'
     'profile:Switch between configurations'
-    'test:Test packages'
   )
+  [[ -f $(which catkin) ]] || verbs_array+=('source:Source a workspace')
+  verbs_array+=('test:Test packages')
   _describe -t verbs 'catkin verb' verbs_array -V verbs && return 0
 }
 
@@ -246,6 +248,10 @@ _catkin_build_complete() {
     '*:package:_catkin_get_packages')
 
   _arguments -C $build_opts && return 0
+}
+
+_catkin_cd_complete() {
+  _arguments -C ':package:_catkin_get_packages' && return 0
 }
 
 _catkin_clean_complete() {
@@ -298,10 +304,10 @@ _catkin_config_complete() {
     '(--no-extend)'{-e,--extend}'[Explicitly extend another workspace]:workspace:_files'\
     '(-e --extend)--no-extend[Unset the explicit extension of another workspace]'\
     '--mkdirs[Create directories required by the configuration]'\
-    '(--no-whitelist)--whitelist[Set the packages on the whitelist]:package:->packages'\
-    '(--no-blacklist)--blacklist[Set the packages on the blacklist]:package:->packages'\
-    '(--whitelist)--no-whitelist[Clear the whitelist]'\
-    '(--blacklist)--no-blacklist[Clear the blacklist]'\
+    '(--no-buildlist)--buildlist[Set the packages on the buildlist]:package:->packages'\
+    '(--no-skiplist)--skiplist[Set the packages on the skiplist]:package:->packages'\
+    '(--buildlist)--no-buildlist[Clear the buildlist]'\
+    '(--skiplist)--no-skiplist[Clear the skiplist]'\
     '(--default-source-space)'{-s,--source-space}'[Source space path]:source space:_files'\
     '(-s --source-space)--default-source-space[Use the default path to the source space]'\
     '(--default-devel-space)'{-d,--devel-space}'[Devel space path]'\
@@ -393,7 +399,7 @@ _catkin_create_complete() {
           pkg_opts=(\
             {-h,--help}'[Show usage help]'\
             {-p,--path}'[The path into which the package should be generated]:path:_files'\
-            '--rosdistro[Which ROS distro to use for the template]:rosdistro:(hydro indigo jade kinetic)'\
+            '--rosdistro[Which ROS distro to use for the template]:rosdistro:(melodic noetic)'\
             {-v,--version}'[Version MAJOR.MINOR.PATCH]:version'\
             {-l,--license}'[Software license for distribution]:license:(BSD MIT GPLV3)'\
             {-d,--description}'[Package description]:description'\
@@ -468,6 +474,9 @@ _catkin_locate_complete() {
   return 1
 }
 
+_catkin_source_complete() {
+  return 0
+}
 
 _catkin_test_complete() {
   local test_opts
@@ -523,13 +532,15 @@ case "$state" in
     case $line[1] in
       (build) _catkin_build_complete && ret=0
         ;;
+      (cd) _catkin_cd_complete && ret=0
+        ;;
       (clean) _catkin_clean_complete && ret=0
         ;;
       (config)
         local terminating_opts
         terminating_opts=(\
-          '--whitelist:Set the packages on the whitelist'\
-          '--blacklist:Set the packages on the blacklist'\
+          '--buildlist:Set the packages on the buildlist'\
+          '--skiplist:Set the packages on the skiplist'\
           '--cmake-args:Arbitrary arguments which are passed to CMake'\
           '--make-args:Arbitrary arguments which are passed to make'\
           '--catkin-make-args:Arbitrary arguments which are passed to make for catkin packages'\
@@ -546,7 +557,7 @@ case "$state" in
           # a block of --cmake-args has been started
           # but not yet ended with --
           # not ended with --*make-args (--make-args, --catkin-make-args, or --cmake-args)
-          # not ended with --blacklist or --whitelist
+          # not ended with --skiplist or --buildlist
           # ignoring the current word for the end-range (such that --cmake-args --<TAB> gives cmake completion)
           _dispatch $service cmake
           _describe -t terminators "terminate multiword argument" terminating_opts
@@ -602,6 +613,8 @@ case "$state" in
       (locate) _catkin_locate_complete && ret=0
         ;;
       (profile) _catkin_profile_complete && ret=0
+        ;;
+      (source) _catkin_source_complete && ret=0
         ;;
       (test) _catkin_test_complete && ret=0
         ;;

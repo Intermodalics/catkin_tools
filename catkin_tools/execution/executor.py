@@ -14,9 +14,11 @@
 
 import asyncio
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import FIRST_COMPLETED
+from concurrent.futures import ThreadPoolExecutor
 from itertools import tee
+from sys import version_info
+
 from osrf_pycommon.process_utils import async_execute_process
 from osrf_pycommon.process_utils import get_loop
 
@@ -24,11 +26,11 @@ from catkin_tools.common import FakeLock
 from catkin_tools.execution import job_server
 
 from .events import ExecutionEvent
-
 from .io import IOBufferLogger
-
 from .stages import CommandStage
 from .stages import FunctionStage
+
+PY37 = version_info[:2] >= (3, 7)
 
 
 def split(values, cond):
@@ -173,9 +175,10 @@ async def async_job(verb, job, threadpool, locks, event_queue, log_path):
             if retcode == stage.early_termination_retcode:
                 break
 
-            # Close logger
-            logger.close()
         finally:
+            if logger is not None:
+                logger.close()
+
             lock.release()
 
     # Finally, return whether all stages of the job completed
@@ -260,7 +263,10 @@ async def execute_jobs(
 
             # Start the job coroutine
             active_jobs.append(job)
-            active_job_fs.add(async_job(verb, job, threadpool, locks, event_queue, log_path))
+            if PY37:
+                active_job_fs.add(asyncio.create_task(async_job(verb, job, threadpool, locks, event_queue, log_path)))
+            else:
+                active_job_fs.add(async_job(verb, job, threadpool, locks, event_queue, log_path))
 
         # Report running jobs
         event_queue.put(ExecutionEvent(
@@ -374,5 +380,7 @@ def run_until_complete(coroutine):
     loop = get_loop()
     loop.slow_callback_duration = 1.0
 
+    task = loop.create_task(coroutine)
+
     # Run jobs
-    return loop.run_until_complete(coroutine)
+    return loop.run_until_complete(task)

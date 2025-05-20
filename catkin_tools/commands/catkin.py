@@ -13,33 +13,38 @@
 # limitations under the License.
 
 import argparse
+import functools
+import importlib.metadata
 import os
-import pkg_resources
 import sys
 from datetime import date
 from shlex import quote as cmd_quote
 
 from catkin_tools.common import is_tty
-
 from catkin_tools.config import get_verb_aliases
 from catkin_tools.config import initialize_config
-
 from catkin_tools.terminal_color import fmt
 from catkin_tools.terminal_color import set_color
 from catkin_tools.terminal_color import test_colors
+from catkin_tools.utils import entry_points
 
 CATKIN_COMMAND_VERB_GROUP = 'catkin_tools.commands.catkin.verbs'
 
 
+@functools.lru_cache(maxsize=None)
+def _get_verb_entrypoints():
+    return list(entry_points(group=CATKIN_COMMAND_VERB_GROUP))
+
+
 def list_verbs():
     verbs = []
-    for entry_point in pkg_resources.iter_entry_points(group=CATKIN_COMMAND_VERB_GROUP):
+    for entry_point in _get_verb_entrypoints():
         verbs.append(entry_point.name)
     return verbs
 
 
 def load_verb_description(verb_name):
-    for entry_point in pkg_resources.iter_entry_points(group=CATKIN_COMMAND_VERB_GROUP):
+    for entry_point in _get_verb_entrypoints():
         if entry_point.name == verb_name:
             return entry_point.load()
 
@@ -96,9 +101,9 @@ def expand_one_verb_alias(sysargs, verb_aliases, used_aliases):
             continue
         if arg in used_aliases:
             print(fmt(
-                "@!@{gf}==>@| Expanding alias '@!@{yf}" + arg +
+                "@!@{gf}==>@| Expanding alias '@!@{yf}{alias}"
                 "@|' was previously expanded, ignoring this time to prevent infinite recursion."
-            ))
+            ).format(alias=arg))
         if arg in verb_aliases:
             before = [] if index == 0 else sysargs[:index - 1]
             after = [] if index == len(sysargs) else sysargs[index + 1:]
@@ -188,7 +193,7 @@ def catkin_main(sysargs):
     # Check for version
     if '--version' in sysargs:
         print('catkin_tools {} (C) 2014-{} Open Source Robotics Foundation'.format(
-            pkg_resources.get_distribution('catkin_tools').version,
+            importlib.metadata.version('catkin_tools'),
             date.today().year)
         )
         print('catkin_tools is released under the Apache License,'
@@ -197,7 +202,7 @@ def catkin_main(sysargs):
         print('Using Python {}'.format(''.join(sys.version.split('\n'))))
         sys.exit(0)
 
-    # Deprecated option
+    # Disallowed deprecated options
     if '--locate-extra-shell-verbs' in sysargs:
         print('Please use `catkin locate --shell-verbs` instead of `catkin --locate-extra-shell-verbs`',
               file=sys.stderr)

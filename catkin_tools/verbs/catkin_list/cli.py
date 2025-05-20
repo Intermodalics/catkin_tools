@@ -14,21 +14,18 @@
 
 import sys
 
+from catkin_pkg.package import InvalidPackage
+from catkin_pkg.topological_order import topological_order_packages
+
 from catkin_tools.argument_parsing import add_context_args
-
-from catkin_tools.context import Context
-
 from catkin_tools.common import find_enclosing_package
+from catkin_tools.common import find_packages
 from catkin_tools.common import get_recursive_build_dependents_in_workspace
 from catkin_tools.common import get_recursive_build_depends_in_workspace
 from catkin_tools.common import get_recursive_run_dependents_in_workspace
 from catkin_tools.common import get_recursive_run_depends_in_workspace
 from catkin_tools.common import getcwd
-
-from catkin_pkg.packages import find_packages
-from catkin_pkg.package import InvalidPackage
-from catkin_pkg.topological_order import topological_order_packages
-
+from catkin_tools.context import Context
 from catkin_tools.terminal_color import ColorMapper
 
 color_mapper = ColorMapper()
@@ -53,11 +50,14 @@ def prepare_arguments(parser):
     add('--depends-on', nargs='*', metavar='PKG', default=[],
         help="Only show packages that directly depend on specific package(s).")
     add('--rdepends-on', '--recursive-depends-on', nargs='*', metavar='PKG', default=[],
-        help="Only show packages that recursively depend on specific package(s).")
+        help="Only show packages that recursively depend on specific package(s). "
+             "Limited to packages present in the current workspace.")
     add('--this', action='store_true',
         help="Show the package which contains the current working directory.")
     add('--directory', '-d', nargs='*', default=[],
-        help="Pass list of directories process all packages in directory")
+        help="Process all packages in the given directories")
+    add('packages', metavar='PKG', type=str, nargs='*', help="Manually specify a list of packages to process. "
+                                                             "Defaults to all packages.")
 
     behavior_group = parser.add_argument_group('Interface', 'The behavior of the command-line interface.')
     add = behavior_group.add_argument
@@ -75,14 +75,17 @@ def main(opts):
     ctx = Context.load(opts.workspace, opts.profile, load_env=False)
 
     if not ctx:
-        sys.exit(clr("@{rf}ERROR: Could not determine workspace.@|"))
+        sys.exit(clr("[list] @!@{rf}Error:@| Could not determine workspace."))
 
     if opts.directory:
         folders = opts.directory
     else:
         folders = [ctx.source_space_abs]
 
-    list_entry_format = '@{pf}-@| @{cf}%s@|' if not opts.unformatted else '%s'
+    list_entry_format = clr('@{pf}-@| @{cf}{}@|') if not opts.unformatted else '{}'
+    list_entry_format_deps = clr('@{cf}{}:@|') if not opts.unformatted else '{}:'
+    depend_heading = clr('  @{yf}{}:@|') if not opts.unformatted else '  {}:'
+    depend_format = clr('  @{pf}-@| {}') if not opts.unformatted else '  - {}'
 
     opts.depends_on = set(opts.depends_on) if opts.depends_on else set()
     warnings = []
@@ -91,8 +94,8 @@ def main(opts):
             packages = find_packages(folder, warnings=warnings)
             ordered_packages = topological_order_packages(packages)
             if ordered_packages and ordered_packages[-1][0] is None:
-                sys.exit(clr("@{rf}ERROR: Circular dependency within packages:@| "
-                             + ordered_packages[-1][1]))
+                sys.exit(clr("[list] @!@{rf}Error:@| Circular dependency within packages: ")
+                         + ordered_packages[-1][1])
             packages_by_name = {pkg.name: (pth, pkg) for pth, pkg in ordered_packages}
 
             if opts.depends_on or opts.rdepends_on:
@@ -131,27 +134,34 @@ def main(opts):
             else:
                 filtered_packages = ordered_packages
 
-            for pkg_pth, pkg in filtered_packages:
-                print(clr(list_entry_format % pkg.name))
-                if opts.rdeps:
-                    build_deps = [p for dp, p in get_recursive_build_depends_in_workspace(pkg, ordered_packages)]
-                    run_deps = [p for dp, p in get_recursive_run_depends_in_workspace([pkg], ordered_packages)]
-                else:
-                    build_deps = [dep for dep in pkg.build_depends if dep.evaluated_condition]
-                    run_deps = [dep for dep in pkg.run_depends if dep.evaluated_condition]
+            if opts.packages:
+                packages_to_print = [(pth, pkg) for (pth, pkg) in filtered_packages if pkg.name in opts.packages]
+            else:
+                packages_to_print = filtered_packages
 
+            for pkg_pth, pkg in packages_to_print:
                 if opts.deps or opts.rdeps:
+                    print(clr(list_entry_format_deps).format(pkg.name))
+                    if opts.rdeps:
+                        build_deps = [p for dp, p in get_recursive_build_depends_in_workspace(pkg, ordered_packages)]
+                        run_deps = [p for dp, p in get_recursive_run_depends_in_workspace([pkg], ordered_packages)]
+                    else:
+                        build_deps = [dep for dep in pkg.build_depends if dep.evaluated_condition]
+                        run_deps = [dep for dep in pkg.run_depends if dep.evaluated_condition]
+
                     if len(build_deps) > 0:
-                        print(clr('  @{yf}build_depend:@|'))
+                        print(depend_heading.format('build_depend'))
                         for dep in build_deps:
-                            print(clr('  @{pf}-@| %s' % dep.name))
+                            print(depend_format.format(dep.name))
                     if len(run_deps) > 0:
-                        print(clr('  @{yf}run_depend:@|'))
+                        print(depend_heading.format('run_depend'))
                         for dep in run_deps:
-                            print(clr('  @{pf}-@| %s' % dep.name))
+                            print(depend_format.format(dep.name))
+                else:
+                    print(list_entry_format.format(pkg.name))
         except InvalidPackage as ex:
-            sys.exit(clr("@{rf}Error:@| The file %s is an invalid package.xml file."
-                         " See below for details:\n\n%s" % (ex.package_path, ex.msg)))
+            sys.exit(clr("[list] @!@{rf}Error:@| The file {} is an invalid package.xml file."
+                         " See below for details:\n\n{}").format(ex.package_path, ex.msg))
 
     # Print out warnings
     if not opts.quiet:

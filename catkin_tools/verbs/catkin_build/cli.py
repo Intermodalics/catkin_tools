@@ -18,7 +18,6 @@ import os
 import sys
 
 try:
-    from catkin_pkg.packages import find_packages
     from catkin_pkg.topological_order import topological_order_packages
 except ImportError as e:
     sys.exit(
@@ -31,36 +30,30 @@ from catkin_pkg.package import InvalidPackage
 from catkin_pkg.tool_detection import get_previous_tool_used_on_the_space
 from catkin_pkg.tool_detection import mark_space_as_built_by
 
-from catkin_tools.argument_parsing import add_context_args
+import catkin_tools.execution.job_server as job_server
 from catkin_tools.argument_parsing import add_cmake_and_make_and_catkin_make_args
+from catkin_tools.argument_parsing import add_context_args
 from catkin_tools.argument_parsing import configure_make_args
-
+from catkin_tools.common import find_enclosing_package
+from catkin_tools.common import find_packages
+from catkin_tools.common import format_env_dict
 from catkin_tools.common import getcwd
 from catkin_tools.common import is_tty
 from catkin_tools.common import log
-from catkin_tools.common import find_enclosing_package
-from catkin_tools.common import format_env_dict
-
 from catkin_tools.context import Context
-
-import catkin_tools.execution.job_server as job_server
-
 from catkin_tools.jobs.utils import CommandMissing
 from catkin_tools.jobs.utils import loadenv
-
 from catkin_tools.metadata import find_enclosing_workspace
 from catkin_tools.metadata import get_metadata
+from catkin_tools.metadata import init_metadata_root
 from catkin_tools.metadata import update_metadata
-
 from catkin_tools.resultspace import load_resultspace_environment
-
 from catkin_tools.terminal_color import set_color
-
-from .color import clr
 
 from .build import build_isolated_workspace
 from .build import determine_packages_to_be_built
 from .build import verify_start_with_option
+from .color import clr
 
 
 def prepare_arguments(parser):
@@ -208,7 +201,7 @@ def print_build_env(context, package_name):
             loadenv(None, None, environ, pkg, context)
             print(format_env_dict(environ, human_readable=sys.stdout.isatty()))
             return 0
-    print('[build] Error: Package `{}` not in workspace.'.format(package_name),
+    print(clr('[build] @!@{rf}Error:@| Package `{}` not in workspace.').format(package_name),
           file=sys.stderr)
     return 1
 
@@ -240,37 +233,38 @@ def main(opts):
                 ws_path=ws_path,
                 warnings=[])
         except InvalidPackage as ex:
-            sys.exit(clr("@{rf}Error:@| The file %s is an invalid package.xml file."
-                         " See below for details:\n\n%s" % (ex.package_path, ex.msg)))
+            sys.exit(clr("@!@{rf}Error:@| The file {} is an invalid package.xml file."
+                         " See below for details:\n\n{}").format(ex.package_path, ex.msg))
 
         # Handle context-based package building
         if opts.build_this:
             if this_package:
                 opts.packages += [this_package]
             else:
-                sys.exit(
-                    "[build] Error: In order to use --this, the current directory must be part of a catkin package.")
+                sys.exit(clr("[build] @!@{rf}Error:@| In order to use --this, "
+                             "the current directory must be part of a catkin package."))
 
         # If --start--with was used without any packages and --this was specified, start with this package
         if opts.start_with_this:
             if this_package:
                 opts.start_with = this_package
             else:
-                sys.exit(
-                    "[build] Error: In order to use --this, the current directory must be part of a catkin package.")
+                sys.exit(clr("[build] @!@{rf}Error:@| In order to use --this, "
+                             "the current directory must be part of a catkin package."))
 
     if opts.no_deps and not opts.packages and not opts.unbuilt:
         sys.exit(clr("[build] @!@{rf}Error:@| With --no-deps, you must specify packages to build."))
 
     # Load the context
-    if opts.build_this or opts.start_with_this:
-        ctx = Context.load(opts.workspace, opts.profile, opts, append=True, strict=True)
-    else:
-        ctx = Context.load(opts.workspace, opts.profile, opts, append=True)
+    ctx = Context.load(opts.workspace, opts.profile, opts, append=True, strict=True)
 
     # Handle no workspace
-    if ctx is None:
+    if ctx is None and (opts.build_this or opts.start_with_this):
         sys.exit(clr("[build] @!@{rf}Error:@| The current folder is not part of a catkin workspace."))
+    elif ctx is None:
+        init_metadata_root(opts.workspace or os.getcwd())
+        ctx = Context.load(opts.workspace, opts.profile, opts, append=True)
+        log(clr('@!@{cf}Initialized new catkin workspace in `{}`@|').format(ctx.workspace))
 
     # Initialize the build configuration
     make_args, makeflags, cli_flags, jobserver = configure_make_args(
@@ -278,14 +272,15 @@ def main(opts):
 
     # Set the jobserver memory limit
     if jobserver and opts.mem_limit:
-        log(clr("@!@{pf}EXPERIMENTAL: limit memory to '%s'@|" % str(opts.mem_limit)))
+        log(clr("@!@{pf}EXPERIMENTAL: limit memory to '{}'@|").format(str(opts.mem_limit)))
         # At this point psuitl will be required, check for it and bail out if not set
         try:
             import psutil  # noqa
         except ImportError as exc:
-            log("Could not import psutil, but psutil is required when using --mem-limit.")
-            log("Please either install psutil or avoid using --mem-limit.")
-            sys.exit("Exception: {0}".format(exc))
+            sys.exit(clr(
+                "[build] @!@{rf}Error:@| Could not import psutil, but psutil is required when using --mem-limit.\n"
+                "[build] Please either install psutil or avoid using --mem-limit.\n"
+                "[build] Exception: {0}").format(exc))
         job_server.set_max_mem(opts.mem_limit)
 
     ctx.make_args = make_args
@@ -295,26 +290,26 @@ def main(opts):
         try:
             load_resultspace_environment(ctx.extend_path)
         except IOError as exc:
-            sys.exit(clr("[build] @!@{rf}Error:@| Unable to extend workspace from \"%s\": %s" %
-                         (ctx.extend_path, exc.message)))
+            sys.exit(clr("[build] @!@{rf}Error:@| Unable to extend workspace from \"{}\": {}").format(
+                         ctx.extend_path, str(exc)))
 
     # Check if the context is valid before writing any metadata
     if not ctx.source_space_exists():
-        sys.exit(clr("[build] @!@{rf}Error:@| Unable to find source space `%s`") % ctx.source_space_abs)
+        sys.exit(clr("[build] @!@{rf}Error:@| Unable to find source space `{}`").format(ctx.source_space_abs))
 
     # ensure the build space was previously built by catkin_tools
     previous_tool = get_previous_tool_used_on_the_space(ctx.build_space_abs)
     if previous_tool is not None and previous_tool != 'catkin build':
         if opts.override_build_tool_check:
             log(clr(
-                "@{yf}Warning: build space at '%s' was previously built by '%s', "
-                "but --override-build-tool-check was passed so continuing anyways."
-                % (ctx.build_space_abs, previous_tool)))
+                "@{yf}Warning: build space at '{}' was previously built by '{}', "
+                "but --override-build-tool-check was passed so continuing anyways.").format(
+                ctx.build_space_abs, previous_tool))
         else:
             sys.exit(clr(
-                "@{rf}The build space at '%s' was previously built by '%s'. "
-                "Please remove the build space or pick a different build space."
-                % (ctx.build_space_abs, previous_tool)))
+                "@{rf}The build space at '{}' was previously built by '{}'. "
+                "Please remove the build space or pick a different build space.").format(
+                ctx.build_space_abs, previous_tool))
     # the build space will be marked as catkin build's if dry run doesn't return
 
     # ensure the devel space was previously built by catkin_tools
@@ -322,14 +317,14 @@ def main(opts):
     if previous_tool is not None and previous_tool != 'catkin build':
         if opts.override_build_tool_check:
             log(clr(
-                "@{yf}Warning: devel space at '%s' was previously built by '%s', "
-                "but --override-build-tool-check was passed so continuing anyways."
-                % (ctx.devel_space_abs, previous_tool)))
+                "@{yf}Warning: devel space at '{}' was previously built by '{}', "
+                "but --override-build-tool-check was passed so continuing anyways.").format(
+                ctx.devel_space_abs, previous_tool))
         else:
             sys.exit(clr(
-                "@{rf}The devel space at '%s' was previously built by '%s'. "
-                "Please remove the devel space or pick a different devel space."
-                % (ctx.devel_space_abs, previous_tool)))
+                "@{rf}The devel space at '{}' was previously built by '{}'. "
+                "Please remove the devel space or pick a different devel space.").format(
+                ctx.devel_space_abs, previous_tool))
     # the devel space will be marked as catkin build's if dry run doesn't return
 
     # Display list and leave the file system untouched

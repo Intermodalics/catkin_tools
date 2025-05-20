@@ -55,7 +55,11 @@ _catkin()
   _init_completion || return # this handles default completion (variables, redirection)
 
   # complete to the following verbs
-  local catkin_verbs="build clean config create init list profile test"
+  local catkin_verbs="build "
+  [[ $(type -t catkin) == "function" ]] && catkin_verbs+="cd "
+  catkin_verbs+="clean config create init list profile "
+  [[ $(type -t catkin) == "function" ]] && catkin_verbs+="source "
+  catkin_verbs+="test"
 
   # filter for long options (from bash_completion)
   local OPTS_FILTER='s/.*\(--[-A-Za-z0-9]\{1,\}=\{0,1\}\).*/\1/p'
@@ -91,7 +95,7 @@ _catkin()
       local catkin_config_opts=$(catkin config --help 2>&1 | sed -ne $OPTS_FILTER | sort -u)
       COMPREPLY=($(compgen -W "${catkin_config_opts}" -- ${cur}))
 
-      # list package names when --whitelist or --blacklist was given as last option
+      # list package names when --buildlist or --skiplist was given as last option
       if [[ ${cur} != -* && $(_catkin_last_option) == --*list ]] ; then
         COMPREPLY+=($(compgen -W "$(_catkin_pkgs)" -- ${cur}))
       fi
@@ -104,8 +108,12 @@ _catkin()
       fi
       ;;
     clean)
-      local catkin_clean_opts=$(catkin clean --help 2>&1 | sed -ne $OPTS_FILTER | sort -u)
-      COMPREPLY=($(compgen -W "${catkin_clean_opts}" -- ${cur}))
+      if [[ ${cur} == -* ]]; then
+        local catkin_clean_opts=$(catkin clean --help 2>&1 | sed -ne $OPTS_FILTER | sort -u)
+        COMPREPLY=($(compgen -W "${catkin_clean_opts}" -- ${cur}))
+      else
+        COMPREPLY=($(compgen -W "$(_catkin_pkgs)" -- ${cur}))
+      fi
       ;;
     create)
       if [[ "${words[@]}" == *" pkg"* ]] ; then

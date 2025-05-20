@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.metadata
 import os
-import pkg_resources
 import shutil
-import sys
 import yaml
 
 from .common import mkdir_p
@@ -155,7 +154,7 @@ def migrate_metadata(workspace_path):
 
     # Check metadata version
     last_version = None
-    current_version = pkg_resources.require("catkin_tools")[0].version
+    current_version = importlib.metadata.version("catkin_tools")
     version_file_path = os.path.join(metadata_root_path, 'VERSION')
 
     # Read the VERSION file
@@ -211,6 +210,14 @@ def migrate_metadata_version(workspace_path, old_version):
                 devel_layout = ('isolated' if isolate_devel else 'merged')
                 metadata['devel_layout'] = devel_layout
 
+            # Migrate new terminology back to old one to avoid breaking change in config file
+            if 'skiplist' in metadata:
+                metadata['blacklist'] = metadata['skiplist']
+                del metadata['skiplist']
+            if 'buildlist' in metadata:
+                metadata['whitelist'] = metadata['buildlist']
+                del metadata['buildlist']
+
             # Save the new metadata
             update_metadata(workspace_path, profile_name, verb, metadata, no_init=True, merge=False)
 
@@ -243,6 +250,7 @@ def init_metadata_root(workspace_path, reset=False):
     else:
         # Create a new .catkin_tools directory
         os.mkdir(metadata_root_path)
+        os.mkdir(os.path.join(metadata_root_path, 'profiles'))
 
     # Write the README file describing the directory
     with open(os.path.join(metadata_root_path, 'README'), 'w') as metadata_readme:
@@ -355,6 +363,12 @@ def get_active_profile(workspace_path):
         return profiles_data['active']
 
     return DEFAULT_PROFILE_NAME
+
+
+def active_profile_set(workspace_path):
+    """Check if the active profile is set in profiles.yml"""
+    profiles_data = get_profiles_data(workspace_path)
+    return 'active' in profiles_data
 
 
 def get_profiles_data(workspace_path):
