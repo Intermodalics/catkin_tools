@@ -135,6 +135,9 @@ def catkin_main(sysargs):
     # Initialize config
     try:
         initialize_config()
+    except PermissionError as exc:
+        # Silently ignored. We simply use the default config instead.
+        pass
     except RuntimeError as exc:
         sys.exit("Failed to initialize config: {0}".format(exc))
 

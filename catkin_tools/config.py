@@ -72,42 +72,52 @@ def initialize_config(path=catkin_config_path):
 
 
 def get_verb_aliases(path=catkin_config_path):
-    if not os.path.isdir(path):
-        raise RuntimeError(
-            "Cannot get verb aliases because the catkin config path ('{0}') does not exist or is a file."
-            .format(path))
     verb_aliases_path = os.path.join(path, 'verb_aliases')
-    if not os.path.isdir(verb_aliases_path):
-        raise RuntimeError(
-            "Cannot get verb aliases because the verb aliases config path ('{0}') does not exist or is a file."
-            .format(verb_aliases_path))
     verb_aliases = {}
-    for file_name in sorted(os.listdir(verb_aliases_path)):
-        if file_name.endswith('.yaml'):
-            full_path = os.path.join(verb_aliases_path, file_name)
-            with open(full_path, 'r') as f:
-                yaml_dict = yaml.safe_load(f)
-            if yaml_dict is None:
-                continue
-            if not isinstance(yaml_dict, dict):
-                raise RuntimeError("Invalid alias file ('{0}'), expected a dict but got a {1}"
-                                   .format(full_path, type(yaml_dict)))
-            for key, value in yaml_dict.items():
-                if not isinstance(key, str):
-                    raise RuntimeError("Invalid alias in file ('{0}'), expected a string but got '{1}' of type {2}"
-                                       .format(full_path, key, type(key)))
-                parsed_value = None
-                if isinstance(value, str):
-                    # Parse using shlex
-                    parsed_value = cmd_split(value)
-                elif isinstance(value, list) or isinstance(value, type(None)):
-                    # Take plainly
-                    parsed_value = value
-                else:
-                    raise RuntimeError(
-                        "Invalid alias expansion in file ('{0}'), expected a string or a list but got '{1}' of type {2}"
-                        .format(full_path, value, type(value)))
-                verb_aliases[key] = parsed_value
+    if not os.path.isdir(verb_aliases_path):
+        yaml_dict = yaml.safe_load(builtin_verb_aliases_content)
+        assert isinstance(yaml_dict, dict)
+        for key, value in yaml_dict.items():
+            assert isinstance(key, str)
+            parsed_value = None
+            if isinstance(value, str):
+                # Parse using shlex
+                parsed_value = cmd_split(value)
+            elif isinstance(value, list) or isinstance(value, type(None)):
+                # Take plainly
+                parsed_value = value
+            else:
+                raise RuntimeError(
+                    "Invalid alias expansion in builtin_verb_aliases_content, expected a string or a list but got '{1}' of type {2}"
+                    .format(value, type(value)))
+            verb_aliases[key] = parsed_value
+    else:
+        for file_name in sorted(os.listdir(verb_aliases_path)):
+            if file_name.endswith('.yaml'):
+                full_path = os.path.join(verb_aliases_path, file_name)
+                with open(full_path, 'r') as f:
+                    yaml_dict = yaml.safe_load(f)
+                if yaml_dict is None:
+                    continue
+                if not isinstance(yaml_dict, dict):
+                    raise RuntimeError("Invalid alias file ('{0}'), expected a dict but got a {1}"
+                                    .format(full_path, type(yaml_dict)))
+                for key, value in yaml_dict.items():
+                    if not isinstance(key, str):
+                        raise RuntimeError("Invalid alias in file ('{0}'), expected a string but got '{1}' of type {2}"
+                                        .format(full_path, key, type(key)))
+                    parsed_value = None
+                    if isinstance(value, str):
+                        # Parse using shlex
+                        parsed_value = cmd_split(value)
+                    elif isinstance(value, list) or isinstance(value, type(None)):
+                        # Take plainly
+                        parsed_value = value
+                    else:
+                        raise RuntimeError(
+                            "Invalid alias expansion in file ('{0}'), expected a string or a list but got '{1}' of type {2}"
+                            .format(full_path, value, type(value)))
+                    verb_aliases[key] = parsed_value
     for alias, value in dict(verb_aliases).items():
         if not value:
             del verb_aliases[alias]
