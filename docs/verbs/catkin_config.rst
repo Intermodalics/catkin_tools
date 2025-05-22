@@ -31,8 +31,8 @@ List-type options include:
  - ``--cmake-args``
  - ``--make-args``
  - ``--catkin-make-args``
- - ``--whitelist``
- - ``--blacklist``
+ - ``--buildlist``
+ - ``--skiplist``
 
 Installing Packages
 ^^^^^^^^^^^^^^^^^^^
@@ -56,7 +56,7 @@ This is also sometimes referred to as "workspace chaining" and sometimes the ext
 
 With ``catkin config``, you can explicitly set the workspace you want to extend, using the ``--extend`` argument.
 This is equivalent to sourcing a setup file, building, and then reverting to the environment before sourcing the setup file.
-For example, regardless of your current environment variable settings (like ``$CMAKE_PREFIX_PATH``), using ``--extend`` can build your workspace against the ``/opt/ros/indigo`` install space.
+For example, regardless of your current environment variable settings (like ``$CMAKE_PREFIX_PATH``), using ``--extend`` can build your workspace against the ``/opt/ros/noetic`` install space.
 
 Note that in case the desired parent workspace is different from one already being used, using the ``--extend`` argument also necessitates cleaning your workspace with ``catkin clean``.
 
@@ -100,16 +100,16 @@ At this point you have a workspace which doesn't extend anything.
 With the default **devel space** layout, this won't build without the ``catkin`` CMake package, since this package is used to generate setup files.
 
 If you realize this after the fact, you still can explicitly tell ``catkin build`` to extend  some result space.
-Suppose you wanted to extend a standard ROS system install like ``/opt/ros/indigo``.
+Suppose you wanted to extend a standard ROS system install like ``/opt/ros/noetic``.
 This can be done with the ``--extend`` option like so:
 
 .. code-block:: bash
 
     $ catkin clean
-    $ catkin config --extend /opt/ros/indigo
+    $ catkin config --extend /opt/ros/noetic
     --------------------------------------------------------------
     Profile:                     default
-    Extending:        [explicit] /opt/ros/indigo
+    Extending:        [explicit] /opt/ros/noetic
     Workspace:                   /tmp/path/to/my_catkin_ws
     --------------------------------------------------------------
     Source Space:       [exists] /tmp/path/to/my_catkin_ws/src
@@ -132,49 +132,49 @@ This can be done with the ``--extend`` option like so:
 
     $ source devel/setup.bash
     $ echo $CMAKE_PREFIX_PATH
-    /tmp/path/to/my_catkin_ws:/opt/ros/indigo
+    /tmp/path/to/my_catkin_ws:/opt/ros/noetic
 
 
-Whitelisting and Blacklisting Packages
+Buildlisting and Skiplisting Packages
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Packages can be added to a package *whitelist* or *blacklist* in order to change which packages get built.
-If the *whitelist*  is non-empty, then a call to ``catkin build`` with no specific package names will only build the packages on the *whitelist*.
-This means that you can still build packages not on the *whitelist*, but only if they are named explicitly or are dependencies of other whitelisted packages.
+Packages can be added to a package *buildlist* or *skiplist* in order to change which packages get built.
+If the *buildlist*  is non-empty, then a call to ``catkin build`` with no specific package names will only build the packages on the *buildlist*.
+This means that you can still build packages not on the *buildlist*, but only if they are named explicitly or are dependencies of other buildlisted packages.
 
-To set the whitelist, you can call the following command:
-
-.. code-block:: text
-
-    catkin config --whitelist foo bar
-
-To clear the whitelist, you can use the ``--no-whitelist`` option:
+To set the buildlist, you can call the following command:
 
 .. code-block:: text
 
-    catkin config --no-whitelist
+    catkin config --buildlist foo bar
 
-If the *blacklist* is non-empty, it will filter the packages to be built in all cases except where a given package is named explicitly.
-This means that blacklisted packages will not be built even if another package in the workspace depends on them.
+To clear the buildlist, you can use the ``--no-buildlist`` option:
+
+.. code-block:: text
+
+    catkin config --no-buildlist
+
+If the *skiplist* is non-empty, it will filter the packages to be built in all cases except where a given package is named explicitly.
+This means that skiplisted packages will not be built even if another package in the workspace depends on them.
 
 .. note::
 
-    Blacklisting a package does not remove it's build directory or build
+    Skiplisting a package does not remove its build directory or build
     products, it only prevents it from being rebuilt.
 
-To set the blacklist, you can call the following command:
+To set the skiplist, you can call the following command:
 
 .. code-block:: text
 
-    catkin config --blacklist baz
+    catkin config --skiplist baz
 
-To clear the blacklist, you can use the ``--no-blacklist`` option:
+To clear the skiplist, you can use the ``--no-skiplist`` option:
 
 .. code-block:: text
 
-    catkin config --no-blacklist
+    catkin config --no-skiplist
 
-Note that you can still build packages on the blacklist and whitelist by passing their names to ``catkin build`` explicitly.
+Note that you can still build packages on the skiplist and buildlist by passing their names to ``catkin build`` explicitly.
 
 Accelerated Building with Environment Caching
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

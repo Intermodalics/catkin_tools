@@ -22,7 +22,7 @@ import sys
 from fnmatch import fnmatch
 from itertools import chain
 
-from catkin_pkg.packages import find_packages
+from catkin_pkg.packages import find_packages as _find_packages
 
 from .terminal_color import ColorMapper
 
@@ -381,7 +381,6 @@ _ansi_escape = re.compile(r'\x1b[^m]*m')
 
 def remove_ansi_escape(string):
     """Removes any ansi escape sequences from a string and returns it"""
-    global _ansi_escape
     return _ansi_escape.sub('', string)
 
 
@@ -404,7 +403,6 @@ def slice_to_printed_length(string, length):
     :returns: truncated string
     :rtype: str
     """
-    global _ansi_escape
     lookup_array = []
     current_index = 0
     matches = list(_ansi_escape.finditer(string))
@@ -517,11 +515,23 @@ def wide_log(msg, **kwargs):
     :type truncate: bool
     """
     try:
-        global wide_log_fn
         wide_log_fn(msg, **kwargs)
     except IOError:
         # This happens when someone ctrl-c's during a log message
         pass
+
+
+def find_packages(*args, **kwargs):
+    """
+    Crawls the filesystem to find package manifest files. Ignores subfolders if CATKIN_IGNORE is present.
+    :param basepath: The path to search in, ``str``
+    :param exclude_paths: A list of paths which should not be searched, ``list``
+    :param exclude_subspaces: The flag is subfolders containing a .catkin file should not be
+        searched, ``bool``
+    :param ignore_markers: A set of filenames to be used as ignore markers, ``set``
+    :returns: A list of relative paths containing package manifest files ``list``
+    """
+    return _find_packages(*args, ignore_markers={'CATKIN_IGNORE'}, **kwargs)
 
 
 def find_enclosing_package(search_start_path=None, ws_path=None, warnings=None, symlinks=True):

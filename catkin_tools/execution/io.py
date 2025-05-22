@@ -20,25 +20,11 @@ from glob import glob
 from osrf_pycommon.process_utils import AsyncSubprocessProtocol
 
 from catkin_tools.common import mkdir_p
-
 from catkin_tools.terminal_color import fmt
 
 from .events import ExecutionEvent
 
 MAX_LOGFILE_HISTORY = 10
-
-if type(u'') == str:
-    def _encode(string):
-        """Encode a Python 3 str into bytes.
-        :type data: str
-        """
-        return string.encode('utf-8')
-else:
-    def _encode(string):
-        """Encode a Python 2 str into bytes.
-        :type data: str
-        """
-        return string.decode('utf-8').encode('utf-8')
 
 
 class IOBufferContainer(object):
@@ -134,7 +120,7 @@ class IOBufferContainer(object):
         """Encode a Python str into bytes.
         :type data: str
         """
-        return _encode(data)
+        return data.encode('utf8')
 
     @staticmethod
     def _decode(data):

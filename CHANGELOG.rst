@@ -5,6 +5,85 @@ Changelog for package catkin_tools
 Upcoming
 --------
 
+0.9.5 (2025-04-01)
+------------------
+
+* Various CI fixes (#762)
+* Use explicit asyncio task creation to fix broken python3.11 (#760)
+* Fix incorrect argument forwarding with shell verbs (#748)
+* chore: fix cmake min version deprecation warning (#761)
+* Fix formatting warning message (#768)
+* Replace pkg_resources by importlib.metadata (#767)
+* Use only CATKIN_IGNORE to ignore packages (#688)
+* Use unittest.mock instead of standalone mock package (#764)
+* Contributors: Mihai Babiac, Timon Engelke, Yuki Furuta, Thomas Grainger, Scott K Logan, jackpittenger, Rick Staa, Jan Strohbeck
+
+0.9.4 (2023-08-03)
+------------------
+
+* Update action versions (#757)
+* Add bookworm as a python3 target (#753)
+* Fix typo in documentation (#755)
+* Create .readthedocs.yaml (#756)
+* Contributors: Jonas Zohren, Timon Engelke, Tully Foote, William Woodall
+
+0.9.3 (2023-02-23)
+------------------
+
+* Fix deprecated asyncio.wait() usage (#741)
+* Fix bash completion for catkin clean (#746)
+* Fix behavior when a different profile is set on the first launch (#728)
+* Update workflows with python > 3.9 (#745)
+* Contributors: Timo Röhling, Timon Engelke
+
+0.9.2 (2023-01-05)
+------------------
+
+* Re-release for technical reasons
+
+0.9.1 (2022-12-14)
+------------------
+
+* Use inspect.getfullargspec where available (#733)
+* Fix `.catkin` file generation when installing (#725)
+* list failed jobs last (#734)
+* Add warned packages to summary (#739)
+* remove leading and trailing ':' in CMAKE_PREFIX_PATH (#729)
+* Always add prebuild jobs as dependencies, even with --no-deps (#740)
+* Contributors: Lucas Walter, Michael Görner, Scott K Logan, Timon Engelke, Yuki Furuta
+
+0.9.0 (2022-06-09)
+------------------
+
+* Small fixes / cleanup (#727)
+* Use yaml output in catkin list (#726)
+* Fix catkin clean for single packages (#710)
+* Do not symlink pycache to devel space (#724)
+* Fix string formatting sanitization (#723)
+* catkin_test_results verbose (#722)
+* Close logger in finally (#719)
+* Migrate to noetic (#717)
+* Contributors: DanielDowling1, Johannes Meyer, Jonathan Bohren, Matthijs van der Burgh, Michael Grupp, Timon Engelke
+
+0.8.5 (2022-03-22)
+------------------
+
+* Correct usage check of build/skiplist (#716)
+
+0.8.4 (2022-03-15)
+------------------
+
+* Fix breaking change in 0.8.3 (#714)
+
+0.8.3 (2022-02-27)
+------------------
+
+* Enable shell completion for the catkin cd and catkin test verb (#706)
+* docs: reference verbs/catkin_test in index.rst (#704)
+* Grammar correction to catkin_config.rst (#709)
+* Replace blacklist/whitelist by buildlist/skiplist terms (#712)
+* Small repository / build system cleanup
+
 0.8.2 (2021-12-01)
 ------------------
 

@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 import itertools
+import math
 import sys
 import threading
 import time
@@ -25,14 +25,12 @@ from catkin_tools.common import format_time_delta_short
 from catkin_tools.common import remove_ansi_escape
 from catkin_tools.common import terminal_width
 from catkin_tools.common import wide_log
-
 from catkin_tools.notifications import notify
-
+from catkin_tools.terminal_color import ColorMapper
 from catkin_tools.terminal_color import fmt
 from catkin_tools.terminal_color import sanitize
-from catkin_tools.terminal_color import ColorMapper
 
-from catkin_tools.execution import job_server
+from . import job_server
 
 # This map translates more human readable format strings into colorized versions
 _color_translation_map = {
@@ -119,8 +117,8 @@ _color_translation_map = {
     "[{}] Ignored: None.":
     fmt("[{}]   @/@!@{kf}Ignored:   None.@|"),
 
-    "[{}] Ignored: {} {} were skipped or are blacklisted.":
-    fmt("[{}]   @/@!@{pf}Ignored:@|   @/@!{}@| @/{} were skipped or are blacklisted.@|"),
+    "[{}] Ignored: {} {} were skipped or are skiplisted.":
+    fmt("[{}]   @/@!@{pf}Ignored:@|   @/@!{}@| @/{} were skipped or are skiplisted.@|"),
 
     "[{}] Failed: No {} failed.":
     fmt("[{}]   @/@!@{kf}Failed:    None.@|"),
@@ -182,8 +180,8 @@ class ConsoleStatusController(threading.Thread):
             jobs,
             max_toplevel_jobs,
             available_jobs,
-            whitelisted_jobs,
-            blacklisted_jobs,
+            buildlisted_jobs,
+            skiplisted_jobs,
             event_queue,
             show_notifications=False,
             show_stage_events=False,
@@ -197,7 +195,8 @@ class ConsoleStatusController(threading.Thread):
             show_full_summary=False,
             show_repro_cmd=True,
             active_status_rate=10.0,
-            pre_start_time=None):
+            pre_start_time=None,
+            **kwargs):
         """
         :param label: The label for this task (build, clean, etc)
         :param job_labels: The labels to be used for the jobs (packages, tests, etc)
@@ -217,6 +216,14 @@ class ConsoleStatusController(threading.Thread):
         :param pre_start_time: The actual start time to report, if preprocessing was done
         """
         super(ConsoleStatusController, self).__init__()
+
+        # Handle deprecated arguments
+        if 'whitelisted_jobs' in kwargs:
+            buildlisted_jobs = kwargs['whitelisted_jobs']
+            del kwargs['whitelisted_jobs']
+        if 'blacklisted_jobs' in kwargs:
+            skiplisted_jobs = kwargs['blacklisted_jobs']
+            del kwargs['blacklisted_jobs']
 
         self.label = label
         self.job_label = job_labels[0]
@@ -244,8 +251,8 @@ class ConsoleStatusController(threading.Thread):
         self.jobs = dict([(j.jid, j) for j in jobs])
 
         self.available_jobs = available_jobs
-        self.blacklisted_jobs = blacklisted_jobs
-        self.whitelisted_jobs = whitelisted_jobs
+        self.skiplisted_jobs = skiplisted_jobs
+        self.buildlisted_jobs = buildlisted_jobs
 
         # Compute the max job id length when combined with stage labels
         self.max_jid_length = 1
@@ -287,17 +294,17 @@ class ConsoleStatusController(threading.Thread):
         faileds = {}
         ignoreds = {}
         abandoneds = {}
-        non_whitelisted = {}
-        blacklisted = {}
+        non_buildlisted = {}
+        skiplisted = {}
 
         # Give each package an output template to use
         for jid in self.available_jobs:
-            if jid in self.blacklisted_jobs:
-                blacklisted[jid] = templates['ignored']
+            if jid in self.skiplisted_jobs:
+                skiplisted[jid] = templates['ignored']
             elif jid not in self.jobs:
                 ignoreds[jid] = templates['ignored']
-            elif len(self.whitelisted_jobs) > 0 and jid not in self.whitelisted_jobs:
-                non_whitelisted[jid] = templates['ignored']
+            elif len(self.buildlisted_jobs) > 0 and jid not in self.buildlisted_jobs:
+                non_buildlisted[jid] = templates['ignored']
             elif jid in completed_jobs:
                 if jid in failed_jobs:
                     faileds[jid] = templates['failed']
@@ -309,38 +316,31 @@ class ConsoleStatusController(threading.Thread):
                 abandoneds[jid] = templates['abandoned']
 
         # Combine successfuls and ignoreds, sort by key
-        if len(successfuls) + len(ignoreds) > 0:
+        if len(successfuls) + len(warneds) + len(ignoreds) > 0:
             wide_log("")
             wide_log(clr("[{}] Successful {}:").format(self.label, self.jobs_label))
             wide_log("")
             print_items_in_columns(
-                sorted(itertools.chain(successfuls.items(), ignoreds.items())),
+                sorted(itertools.chain(successfuls.items(), warneds.items(), ignoreds.items())),
                 number_of_columns)
         else:
             wide_log("")
             wide_log(clr("[{}] No {} succeeded.").format(self.label, self.jobs_label))
             wide_log("")
 
-        # Print out whitelisted jobs
-        if len(non_whitelisted) > 0:
+        # Print out buildlisted jobs
+        if len(non_buildlisted) > 0:
             wide_log("")
-            wide_log(clr("[{}] Non-whitelisted {}:").format(self.label, self.jobs_label))
+            wide_log(clr("[{}] Non-buildlisted {}:").format(self.label, self.jobs_label))
             wide_log("")
-            print_items_in_columns(sorted(non_whitelisted.items()), number_of_columns)
+            print_items_in_columns(sorted(non_buildlisted.items()), number_of_columns)
 
-        # Print out blacklisted jobs
-        if len(blacklisted) > 0:
+        # Print out skiplisted jobs
+        if len(skiplisted) > 0:
             wide_log("")
-            wide_log(clr("[{}] Blacklisted {}:").format(self.label, self.jobs_label))
+            wide_log(clr("[{}] Skiplisted {}:").format(self.label, self.jobs_label))
             wide_log("")
-            print_items_in_columns(sorted(blacklisted.items()), number_of_columns)
-
-        # Print out jobs that failed
-        if len(faileds) > 0:
-            wide_log("")
-            wide_log(clr("[{}] Failed {}:").format(self.label, self.jobs_label))
-            wide_log("")
-            print_items_in_columns(sorted(faileds.items()), number_of_columns)
+            print_items_in_columns(sorted(skiplisted.items()), number_of_columns)
 
         # Print out jobs that were abandoned
         if len(abandoneds) > 0:
@@ -348,6 +348,13 @@ class ConsoleStatusController(threading.Thread):
             wide_log(clr("[{}] Abandoned {}:").format(self.label, self.jobs_label))
             wide_log("")
             print_items_in_columns(sorted(abandoneds.items()), number_of_columns)
+
+        # Print out jobs that failed
+        if len(faileds) > 0:
+            wide_log("")
+            wide_log(clr("[{}] Failed {}:").format(self.label, self.jobs_label))
+            wide_log("")
+            print_items_in_columns(sorted(faileds.items()), number_of_columns)
 
         wide_log("")
 
@@ -382,7 +389,7 @@ class ConsoleStatusController(threading.Thread):
                 self.label))
         else:
             notification_msg.append("{} {} were skipped.".format(len(all_ignored_jobs), self.jobs_label))
-            wide_log(clr('[{}] Ignored: {} {} were skipped or are blacklisted.').format(
+            wide_log(clr('[{}] Ignored: {} {} were skipped or are skiplisted.').format(
                 self.label,
                 len(all_ignored_jobs),
                 self.jobs_label))
@@ -586,7 +593,8 @@ class ConsoleStatusController(threading.Thread):
                     reason = clr('Unrelated job failed')
                 elif 'MISSING_DEPS' == event.data['reason']:
                     reason = clr('Depends on unknown jobs: {}').format(
-                        ', '.join([clr('@!{}@|').format(jid) for jid in event.data['dep_ids']]))
+                        ', '.join([fmt('@{boldon}{}@{boldoff}', reset=False).format(jid)
+                                   for jid in event.data['dep_ids']]))
 
                 wide_log(clr('Abandoned <<< {:<{}} [ {} ]').format(
                     event.data['job_id'],

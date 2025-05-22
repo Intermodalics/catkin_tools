@@ -19,17 +19,14 @@ import re
 import sys
 
 from . import metadata
-
 from .common import getcwd
 from .common import printed_fill
 from .common import remove_ansi_escape
 from .common import terminal_width
-
 from .metadata import find_enclosing_workspaces
-
 from .resultspace import get_resultspace_environment
-
 from .terminal_color import ColorMapper
+from .utils import entry_points
 
 color_mapper = ColorMapper()
 clr = color_mapper.clr
@@ -62,8 +59,8 @@ class Context(object):
         'use_internal_make_jobserver',
         'use_env_cache',
         'catkin_make_args',
-        'whitelist',
         'blacklist',
+        'whitelist',
         'authors',
         'maintainers',
         'licenses',
@@ -124,9 +121,7 @@ class Context(object):
         if cls.KEYS:
             return
 
-        from pkg_resources import iter_entry_points
-
-        for entry_point in iter_entry_points(group=cls.CATKIN_SPACES_GROUP):
+        for entry_point in entry_points(group=cls.CATKIN_SPACES_GROUP):
             ep_dict = entry_point.load()
             cls.STORED_KEYS.append(entry_point.name + '_space')
             cls.SPACES[entry_point.name] = ep_dict
@@ -202,6 +197,8 @@ class Context(object):
 
         # Get the active profile
         profile = profile or opts_vars.get('profile', None) or metadata.get_active_profile(workspace)
+        if not metadata.active_profile_set(workspace):
+            metadata.set_active_profile(workspace, profile)
         opts_vars['profile'] = profile
 
         # Initialize empty metadata/args
@@ -313,8 +310,8 @@ class Context(object):
         use_env_cache=False,
         catkin_make_args=None,
         space_suffix=None,
-        whitelist=None,
-        blacklist=None,
+        buildlist=None,
+        skiplist=None,
         authors=None,
         maintainers=None,
         licenses=None,
@@ -360,10 +357,10 @@ class Context(object):
         :type catkin_make_args: list
         :param space_suffix: suffix for build, devel, and install spaces which are not explicitly set.
         :type space_suffix: str
-        :param whitelist: a list of packages to build by default
-        :type whitelist: list
-        :param blacklist: a list of packages to ignore by default
-        :type blacklist: list
+        :param buildlist: a list of packages to build by default
+        :type buildlist: list
+        :param skiplist: a list of packages to ignore by default
+        :type skiplist: list
         :raises: ValueError if workspace or source space does not exist
         :type authors: list
         :param authors: a list of default authors
@@ -375,6 +372,14 @@ class Context(object):
         :param extends: the name of a profile to use as a base and inherit settings from
         """
         self.__locked = False
+
+        # Handle deprecated arguments
+        if 'whitelist' in kwargs:
+            buildlist = kwargs['whitelist']
+            del kwargs['whitelist']
+        if 'blacklist' in kwargs:
+            skiplist = kwargs['blacklist']
+            del kwargs['blacklist']
 
         # Validation is done on assignment
         self.workspace = workspace
@@ -399,9 +404,9 @@ class Context(object):
 
         self.destdir = os.environ.get('DESTDIR', None)
 
-        # Handle package whitelist/blacklist
-        self.whitelist = whitelist or []
-        self.blacklist = blacklist or []
+        # Handle package buildlist/skiplist
+        self.buildlist = buildlist or []
+        self.skiplist = skiplist or []
 
         # Handle default authors/maintainers
         self.authors = authors or []
@@ -452,7 +457,8 @@ class Context(object):
 
         self.cached_cmake_prefix_path = ''
         if 'CMAKE_PREFIX_PATH' in sticky_env:
-            split_result_cmake_prefix_path = sticky_env.get('CMAKE_PREFIX_PATH', '').split(':')
+            split_result_cmake_prefix_path = \
+                sticky_env.get('CMAKE_PREFIX_PATH', '').replace('::', ':').strip(':').split(':')
             if len(split_result_cmake_prefix_path) > 1:
                 self.cached_cmake_prefix_path = ':'.join(split_result_cmake_prefix_path[1:])
 
@@ -460,23 +466,24 @@ class Context(object):
         self.env_cmake_prefix_path = ''
         if self.extend_path:
             extended_env = get_resultspace_environment(self.extend_path, quiet=False)
-            self.env_cmake_prefix_path = extended_env.get('CMAKE_PREFIX_PATH', '')
+            self.env_cmake_prefix_path = extended_env.get('CMAKE_PREFIX_PATH', '').replace('::', ':').strip(':')
             if not self.env_cmake_prefix_path:
-                print(clr("@!@{rf}Error:@| Could not load environment from workspace: '%s', "
-                          "target environment (env.sh) does not provide 'CMAKE_PREFIX_PATH'" % self.extend_path))
+                print(clr("@!@{rf}Error:@| Could not load environment from workspace: '{}', "
+                          "target environment (env.sh) does not provide 'CMAKE_PREFIX_PATH'").format(self.extend_path))
                 print(extended_env)
                 sys.exit(1)
         else:
             # Get the current CMAKE_PREFIX_PATH
             if 'CMAKE_PREFIX_PATH' in os.environ:
-                split_result_cmake_prefix_path = os.environ['CMAKE_PREFIX_PATH'].split(':')
+                split_result_cmake_prefix_path = \
+                    os.environ['CMAKE_PREFIX_PATH'].replace('::', ':').strip(':').split(':')
                 if len(split_result_cmake_prefix_path) > 1 and (
                         (not self.install and split_result_cmake_prefix_path[0] == self.devel_space_abs) or
                         (self.install and split_result_cmake_prefix_path[0] == self.install_space_abs)):
 
                     self.env_cmake_prefix_path = ':'.join(split_result_cmake_prefix_path[1:])
                 else:
-                    self.env_cmake_prefix_path = os.environ.get('CMAKE_PREFIX_PATH', '').rstrip(':')
+                    self.env_cmake_prefix_path = os.environ.get('CMAKE_PREFIX_PATH', '').replace('::', ':').strip(':')
 
         # Add warning for empty extend path
         if (self.devel_layout == 'linked' and
@@ -501,10 +508,10 @@ class Context(object):
                     "If you want to use a different CMAKE_PREFIX_PATH you "
                     "should call @{yf}`catkin clean`@| to remove all "
                     "references to the previous CMAKE_PREFIX_PATH.\\n\\n"
-                    "@{cf}Cached CMAKE_PREFIX_PATH:@|\\n\\t@{yf}%s@|\\n"
-                    "@{cf}Other workspace to extend:@|\\n\\t@{yf}{_Context__extend_path}@|\\n"
-                    "@{cf}Other workspace's CMAKE_PREFIX_PATH:@|\\n\\t@{yf}%s@|"
-                    % (self.cached_cmake_prefix_path, self.env_cmake_prefix_path))]
+                    "@{cf}Cached CMAKE_PREFIX_PATH:@|\\n\\t@{yf}{}@|\\n"
+                    "@{cf}Other workspace to extend:@|\\n\\t@{yf}{}@|\\n"
+                    "@{cf}Other workspace's CMAKE_PREFIX_PATH:@|\\n\\t@{yf}{}@|").format(
+                        self.cached_cmake_prefix_path, self.extend_path, self.env_cmake_prefix_path)]
 
         elif self.env_cmake_prefix_path and\
                 self.cached_cmake_prefix_path and\
@@ -516,9 +523,9 @@ class Context(object):
                 "If you want to use a different CMAKE_PREFIX_PATH you should "
                 "call @{yf}`catkin clean`@| to remove all references to "
                 "the previous CMAKE_PREFIX_PATH.\\n\\n"
-                "@{cf}Cached CMAKE_PREFIX_PATH:@|\\n\\t@{yf}%s@|\\n"
-                "@{cf}Current CMAKE_PREFIX_PATH:@|\\n\\t@{yf}%s@|" %
-                (self.cached_cmake_prefix_path, self.env_cmake_prefix_path))]
+                "@{cf}Cached CMAKE_PREFIX_PATH:@|\\n\\t@{yf}{}@|\\n"
+                "@{cf}Current CMAKE_PREFIX_PATH:@|\\n\\t@{yf}{}@|").format(
+                self.cached_cmake_prefix_path, self.env_cmake_prefix_path)]
 
         # Check if prefix path is different from the environment prefix path
         if self.manual_cmake_prefix_path:
@@ -566,8 +573,8 @@ class Context(object):
                 clr("@{cf}Cache Job Environments:@|      @{yf}{_Context__use_env_cache}@|"),
             ],
             [
-                clr("@{cf}Whitelisted Packages:@|        @{yf}{whitelisted_packages}@|"),
-                clr("@{cf}Blacklisted Packages:@|        @{yf}{blacklisted_packages}@|"),
+                clr("@{cf}Buildlisted Packages:@|        @{yf}{buildlisted_packages}@|"),
+                clr("@{cf}Skiplisted Packages:@|         @{yf}{skiplisted_packages}@|"),
             ]
         ]
 
@@ -619,8 +626,8 @@ class Context(object):
             'make_args': ' '.join(self.make_args + self.jobs_args or ['None']),
             'catkin_make_args': ', '.join(self.catkin_make_args or ['None']),
             'destdir_missing': existence_str(self.destdir, used=self.destdir),
-            'whitelisted_packages': ' '.join(self.whitelist or ['None']),
-            'blacklisted_packages': ' '.join(self.blacklist or ['None']),
+            'buildlisted_packages': ' '.join(self.buildlist or ['None']),
+            'skiplisted_packages': ' '.join(self.skiplist or ['None']),
         }
         for space, space_dict in sorted(Context.SPACES.items()):
             key_missing = '{}_missing'.format(space)
@@ -820,20 +827,37 @@ class Context(object):
         self.__packages = value
 
     @property
+    def buildlist(self):
+        return self.__buildlist
+
+    @buildlist.setter
+    def buildlist(self, value):
+        self.__buildlist = value
+
+    @property
+    def skiplist(self):
+        return self.__skiplist
+
+    @skiplist.setter
+    def skiplist(self, value):
+        self.__skiplist = value
+
+    # Deprecated args: white/blacklist
+    @property
     def whitelist(self):
-        return self.__whitelist
+        return self.__buildlist
 
     @whitelist.setter
     def whitelist(self, value):
-        self.__whitelist = value
+        self.__buildlist = value
 
     @property
     def blacklist(self):
-        return self.__blacklist
+        return self.__skiplist
 
     @blacklist.setter
     def blacklist(self, value):
-        self.__blacklist = value
+        self.__skiplist = value
 
     @property
     def authors(self):

@@ -12,14 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import argparse
 import os
+import sys
 
 from catkin_tools.argument_parsing import add_cmake_and_make_and_catkin_make_args
 from catkin_tools.argument_parsing import add_context_args
-
 from catkin_tools.context import Context
-
-from catkin_tools.terminal_color import ColorMapper, sanitize
+from catkin_tools.metadata import init_metadata_root
+from catkin_tools.terminal_color import ColorMapper
+from catkin_tools.terminal_color import fmt
 
 color_mapper = ColorMapper()
 clr = color_mapper.clr
@@ -70,18 +72,25 @@ def prepare_arguments(parser):
     lists_group = parser.add_argument_group(
         'Package Build Defaults', 'Packages to include or exclude from default build behavior.')
     add = lists_group.add_mutually_exclusive_group().add_argument
-    add('--whitelist', metavar="PKG", dest='whitelist', nargs="+", required=False, type=str, default=None,
-        help='Set the packages on the whitelist. If the whitelist is non-empty, '
-        'only the packages on the whitelist are built with a bare call to '
-        '`catkin build`.')
-    add('--no-whitelist', dest='whitelist', action='store_const', const=[], default=None,
-        help='Clear all packages from the whitelist.')
+    add('--buildlist', metavar="PKG", dest='buildlist', nargs="+", required=False, type=str,
+        default=None, help='Set the packages on the buildlist. If the buildlist is non-empty, '
+        'only the packages on the buildlist are built with a bare call to `catkin build`.')
+    add('--no-buildlist', dest='buildlist', action='store_const', const=[], default=None,
+        help='Clear all packages from the buildlist.')
+    add('--whitelist', metavar="PKG", dest='buildlist', nargs="+", required=False, type=str,
+        default=None, help=argparse.SUPPRESS)
+    add('--no-whitelist', dest='buildlist', action='store_const', const=[], default=None,
+        help=argparse.SUPPRESS)
     add = lists_group.add_mutually_exclusive_group().add_argument
-    add('--blacklist', metavar="PKG", dest='blacklist', nargs="+", required=False, type=str, default=None,
-        help='Set the packages on the blacklist. Packages on the blacklist are '
+    add('--skiplist', metavar="PKG", dest='skiplist', nargs="+", required=False, type=str, default=None,
+        help='Set the packages on the skiplist. Packages on the skiplist are '
         'not built with a bare call to `catkin build`.')
-    add('--no-blacklist', dest='blacklist', action='store_const', const=[], default=None,
-        help='Clear all packages from the blacklist.')
+    add('--no-skiplist', dest='skiplist', action='store_const', const=[], default=None,
+        help='Clear all packages from the skiplist.')
+    add('--blacklist', metavar="PKG", dest='skiplist', nargs="+", required=False, type=str, default=None,
+        help=argparse.SUPPRESS)
+    add('--no-blacklist', dest='skiplist', action='store_const', const=[], default=None,
+        help=argparse.SUPPRESS)
 
     spaces_group = parser.add_argument_group('Spaces', 'Location of parts of the catkin workspace.')
     Context.setup_space_keys()
@@ -131,11 +140,38 @@ def prepare_arguments(parser):
 
 def main(opts):
     try:
+        sysargs = sys.argv[1:]
+
+        # Deprecated options
+        deprecated_args = [
+                ('--blacklist',    '--skiplist',),
+                ('--no-blacklist', '--no-skiplist'),
+                ('--whitelist',    '--buildlist'),
+                ('--no-whitelist', '--no-buildlist')]
+
+        used_deprecated_args = [(old, new) for old, new in deprecated_args if old in sysargs]
+
+        if any(used_deprecated_args):
+            print(fmt('@!@{rf}WARNING:@| Some arguments are deprecated and will be'
+                      ' removed in a future release.\n'))
+            print('Please switch to using their replacements as follows:')
+            for old_arg, new_arg in used_deprecated_args:
+                print(" - '{}' is deprecated, use '{}' instead".format(old_arg, new_arg))
+            print()
+
         # Determine if the user is trying to perform some action, in which
         # case, the workspace should be automatically initialized
         ignored_opts = ['main', 'verb']
         actions = [v for k, v in vars(opts).items() if k not in ignored_opts]
         no_action = not any(actions)
+
+        # Handle old argument names necessary for Context.load
+        if opts.buildlist is not None:
+            opts.whitelist = opts.buildlist
+            del opts.buildlist
+        if opts.skiplist is not None:
+            opts.blacklist = opts.skiplist
+            del opts.skiplist
 
         # Try to find a metadata directory to get context defaults
         # Otherwise use the specified directory
@@ -144,25 +180,39 @@ def main(opts):
             opts.profile,
             opts,
             append=opts.append_args,
-            remove=opts.remove_args)
+            remove=opts.remove_args,
+            strict=True)
 
         do_init = opts.init or not no_action
         summary_notes = []
 
-        if not context.initialized() and do_init:
-            summary_notes.append(clr('@!@{cf}Initialized new catkin workspace in `%s`@|' % sanitize(context.workspace)))
+        if not context and not do_init:
+            # Don't initialize a new workspace
+            print(clr('@!@{rf}WARNING:@| Workspace is not yet initialized. '
+                      'Use catkin init or run catkin config with --init.'))
 
-        if context.initialized() or do_init:
+        else:
+            # Either initialize it or it already exists
+            if not context:
+                init_metadata_root(opts.workspace or os.getcwd())
+                context = Context.load(
+                    opts.workspace,
+                    opts.profile,
+                    opts,
+                    append=opts.append_args,
+                    remove=opts.remove_args)
+                summary_notes.append(clr('@!@{cf}Initialized new catkin workspace in `{}`@|').format(context.workspace))
+
             Context.save(context)
 
-        if opts.mkdirs and not context.source_space_exists():
-            os.makedirs(context.source_space_abs)
+            if opts.mkdirs and not context.source_space_exists():
+                os.makedirs(context.source_space_abs)
 
-        print(context.summary(notes=summary_notes))
+            print(context.summary(notes=summary_notes))
 
     except IOError as exc:
         # Usually happens if workspace is already underneath another catkin_tools workspace
-        print('error: could not configure catkin workspace: %s' % str(exc))
+        print(clr("@!@{rf}Error:@| Could not configure catkin workspace: {}").format(exc), file=sys.stderr)
         return 1
 
     return 0
